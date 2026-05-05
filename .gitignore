@@ -5,3 +5,4 @@ __pycache__/
 mlruns/
 *.egg-info/
 .env
+client_secret_*.json

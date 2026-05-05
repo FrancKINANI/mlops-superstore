@@ -1,4 +1,7 @@
 [core]
-    remote = local_remote
+    remote = gdrive_remote
 ['remote "local_remote"']
     url = /home/franck/dvc-storage/mlops-superstore
+['remote "gdrive_remote"']
+    url = gdrive://1hcsPPGmzdJHBVLJyZsqdsNtwCZkXBhWJ
+    gdrive_acknowledge_abuse = true
