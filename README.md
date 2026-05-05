@@ -76,6 +76,31 @@ Promote the best-performing model to the **Production** stage:
 python src/models/register_model.py
 ```
 
+## ⛅ Airflow Orchestration
+This project includes an Airflow DAG directory under `dags/`.
+Airflow 3.x is required for the current Python 3.13 environment.
+
+### Start Airflow in standalone mode
+```bash
+export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/dags
+airflow standalone
+```
+
+- `airflow standalone` initializes the database, launches the webserver, and creates a local admin user.
+- The admin credentials are shown in the terminal output when Airflow starts.
+- There is no default `admin/admin` account for this setup.
+
+### If you need the DAG folder permanently
+Add this line to your shell profile:
+```bash
+echo "export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/dags" >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Login notes
+If `admin/admin` does not work, use the credentials printed by `airflow standalone`.
+If you lost them, stop Airflow and restart `airflow standalone` to recreate the local admin user and display the login info again.
+
 ## 📊 Model Performance
 The current best model is **Gradient Boosting**, achieving:
 - **F1-Score:** 0.9723

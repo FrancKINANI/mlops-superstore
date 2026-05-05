@@ -54,7 +54,7 @@ start = EmptyOperator(
 def validate_data(**context):
     import pandas as pd
 
-    data_path = os.path.join(PROJECT_ROOT, "data/raw/superstore.csv")
+    data_path = os.path.join(PROJECT_ROOT, "data/raw/Superstore.csv")
 
     if not os.path.exists(data_path):
         raise FileNotFoundError(f"Dataset introuvable : {data_path}")
@@ -93,8 +93,8 @@ def run_preprocessing_task(**context):
     sys.path.insert(0, PROJECT_ROOT)
     from src.data.preprocessing import run_preprocessing
 
-    input_path  = os.path.join(PROJECT_ROOT, "data/raw/superstore.csv")
-    output_path = os.path.join(PROJECT_ROOT, "data/processed/superstore_processed.csv")
+    input_path  = os.path.join(PROJECT_ROOT, "data/raw/Superstore.csv")
+    output_path = os.path.join(PROJECT_ROOT, "data/processed/Superstore_processed.csv")
 
     X, y = run_preprocessing(input_path, output_path)
 
