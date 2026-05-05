@@ -10,8 +10,8 @@ import sys
 import os
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
 
 # ─────────────────────────────────────────
 # CONFIGURATION
@@ -91,7 +91,7 @@ task_validate = PythonOperator(
 
 def run_preprocessing_task(**context):
     sys.path.insert(0, PROJECT_ROOT)
-    from src.data.preprocessing import run_preprocessing
+    from data.preprocessing import run_preprocessing
 
     input_path  = os.path.join(PROJECT_ROOT, "data/raw/Superstore.csv")
     output_path = os.path.join(PROJECT_ROOT, "data/processed/Superstore_processed.csv")
