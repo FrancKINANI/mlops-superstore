@@ -101,6 +101,45 @@ source ~/.bashrc
 If `admin/admin` does not work, use the credentials printed by `airflow standalone`.
 If you lost them, stop Airflow and restart `airflow standalone` to recreate the local admin user and display the login info again.
 
+## 🚀 API Deployment (Inference)
+
+L'API est conçue pour être autonome, robuste et facile à mettre à jour sans reconstruire l'image Docker.
+
+### 1. Configuration du Conteneur
+Le déploiement utilise **Docker Compose** avec deux optimisations majeures :
+- **Volume Mounting** : Le dossier `mlartifacts/` est monté en lecture seule dans le conteneur. Cela permet de changer de modèle sans reconstruire l'image.
+- **Lazy Loading** : Le modèle est chargé en mémoire uniquement lors de la première requête de prédiction, évitant ainsi les crashs au démarrage si le fichier est manquant.
+
+### 2. Lancement rapide
+1. **Identifier le modèle** : Trouvez le chemin de votre fichier `model.pkl` dans `mlartifacts/`.
+2. **Mettre à jour la configuration** : Modifiez la variable `MODEL_PATH` dans `docker-compose.yml` pour pointer vers votre modèle.
+3. **Démarrer l'API** :
+   ```bash
+   docker compose up -d --build
+   ```
+
+### 3. Endpoints disponibles
+- **Accueil** : `GET http://localhost:8000/` (Affiche les infos du modèle configuré)
+- **Santé** : `GET http://localhost:8000/health` (Vérifie si le modèle est chargé en mémoire)
+- **Prédiction** : `POST http://localhost:8000/predict`
+  ```bash
+  curl -X POST http://localhost:8000/predict \
+    -H "Content-Type: application/json" \
+    -d '{
+      "Sales": 800, "Quantity": 2, "Discount": 0.0,
+      "Ship_Mode": "Standard Class", "Segment": "Corporate",
+      "Region": "West", "Category": "Technology",
+      "Sub_Category": "Phones", "order_month": 11,
+      "order_quarter": 4, "order_dayofweek": 1,
+      "shipping_delay": 4, "unit_price": 400.0
+    }'
+  ```
+
+### 4. Mise à jour du modèle
+Pour passer à une nouvelle version du modèle :
+1. Modifiez `MODEL_PATH` dans `docker-compose.yml`.
+2. Redémarrez le conteneur : `docker compose restart`.
+
 ## 📊 Model Performance
 The current best model is **Gradient Boosting**, achieving:
 - **F1-Score:** 0.9723

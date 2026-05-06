@@ -6,8 +6,11 @@ services:
     container_name: superstore-api
     ports:
       - "8000:8000"
+    volumes:
+      # Montage du dossier local des artéfacts dans le conteneur
+      - ./mlartifacts:/app/mlartifacts:ro
     environment:
-      - MLFLOW_TRACKING_URI=http://192.168.1.8:5000
+      - MODEL_PATH=/app/mlartifacts/1/2acd3303576e4ab2967290e07fa3d929/artifacts/model.pkl
       - MODEL_NAME=superstore_GradientBoosting
       - MODEL_STAGE=Production
     deploy:
@@ -16,4 +19,5 @@ services:
           memory: 512M
     restart: unless-stopped
 
-# Note: Ce fichier suppose que MLflow tourne déjà sur votre machine hôte (port 5000)
+# Ce mode évite de reconstruire l'image Docker à chaque nouveau modèle.
+# Il suffit de mettre à jour MODEL_PATH et de faire 'docker compose restart'.

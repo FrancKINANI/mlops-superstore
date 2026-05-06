@@ -19,8 +19,9 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # ─────────────────────────────────────────
 
-# Chemin local du modèle (pré-téléchargé dans le conteneur)
-MODEL_PATH = "/app/mlartifacts/1/models/m-2acd3303576e4ab2967290e07fa3d929/artifacts/model.pkl"
+# Chemin local du modèle (injecté via volume ou variable d'env)
+DEFAULT_MODEL_PATH = "/app/mlartifacts/1/m-2acd3303576e4ab2967290e07fa3d929/artifacts/model.pkl"
+MODEL_PATH = os.getenv("MODEL_PATH", DEFAULT_MODEL_PATH)
 MODEL_NAME = os.getenv("MODEL_NAME", "superstore_GradientBoosting")
 MODEL_STAGE = os.getenv("MODEL_STAGE", "Production")
 
