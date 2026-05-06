@@ -1,35 +1,48 @@
 # src/api/main.py
 """
 API d'inférence — Superstore Profitability Prediction
-Charge le modèle depuis MLflow Model Registry
+Charge le modèle depuis le fichier local (bypass MLflow)
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field
-import mlflow.sklearn
+import pickle
 import pandas as pd
 import os
+import logging
+
+# Configuration du logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────
 # CONFIGURATION
 # ─────────────────────────────────────────
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
-MODEL_NAME          = os.getenv("MODEL_NAME", "superstore_GradientBoosting")
-MODEL_STAGE         = os.getenv("MODEL_STAGE", "Production")
+# Chemin local du modèle (pré-téléchargé dans le conteneur)
+MODEL_PATH = "/app/mlartifacts/1/models/m-2acd3303576e4ab2967290e07fa3d929/artifacts/model.pkl"
+MODEL_NAME = os.getenv("MODEL_NAME", "superstore_GradientBoosting")
+MODEL_STAGE = os.getenv("MODEL_STAGE", "Production")
 
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+# Cache pour le modèle
+_model = None
 
 # ─────────────────────────────────────────
-# CHARGEMENT DU MODÈLE
+# CHARGEMENT DU MODÈLE (LAZY)
 # ─────────────────────────────────────────
 
-def load_model():
-    model_uri = f"models:/{MODEL_NAME}/{MODEL_STAGE}"
-    print(f"Chargement du modèle : {model_uri}")
-    return mlflow.sklearn.load_model(model_uri)
-
-model = load_model()
+def get_model():
+    global _model
+    if _model is None:
+        logger.info(f"Tentative de chargement du modèle depuis : {MODEL_PATH}")
+        try:
+            with open(MODEL_PATH, 'rb') as f:
+                _model = pickle.load(f)
+            logger.info("Modèle chargé avec succès.")
+        except Exception as e:
+            logger.error(f"Erreur lors du chargement du modèle : {str(e)}")
+            raise RuntimeError(f"Impossible de charger le modèle : {str(e)}")
+    return _model
 
 # ─────────────────────────────────────────
 # SCHÉMA DE LA REQUÊTE
@@ -69,14 +82,18 @@ app = FastAPI(
 
 @app.get("/")
 def root():
-    return {"status": "ok", "model": MODEL_NAME, "stage": MODEL_STAGE}
+    return {
+        "status": "ok", 
+        "model": MODEL_NAME, 
+        "stage": MODEL_STAGE,
+    }
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "model_loaded": model is not None}
+    return {"status": "healthy", "model_loaded": _model is not None}
 
 @app.post("/predict", response_model=PredictionOutput)
-def predict(data: TransactionInput):
+def predict(data: TransactionInput, model=Depends(get_model)):
     try:
         # Construit le DataFrame attendu par le pipeline sklearn
         input_df = pd.DataFrame([{
@@ -108,4 +125,5 @@ def predict(data: TransactionInput):
         )
 
     except Exception as e:
+        logger.error(f"Erreur lors de la prédiction : {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

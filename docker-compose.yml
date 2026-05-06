@@ -1,0 +1,19 @@
+services:
+  superstore-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: superstore-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=http://192.168.1.8:5000
+      - MODEL_NAME=superstore_GradientBoosting
+      - MODEL_STAGE=Production
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    restart: unless-stopped
+
+# Note: Ce fichier suppose que MLflow tourne déjà sur votre machine hôte (port 5000)

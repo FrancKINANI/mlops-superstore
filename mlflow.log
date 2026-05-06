@@ -1,0 +1,44 @@
+Backend store URI not provided. Using sqlite:///mlflow.db
+Registry store URI not provided. Using backend store URI.
+[MLflow] Security middleware enabled with default settings (localhost-only). To allow connections from other hosts, use --host 0.0.0.0 and configure --allowed-hosts and --cors-allowed-origins.
+2026/05/06 16:41:50 INFO:     Uvicorn running on http://0.0.0.0:5000 (Press CTRL+C to quit)
+2026/05/06 16:41:50 INFO:     Started parent process [418956]
+2026/05/06 16:42:06 INFO:     Received SIGTERM, exiting.
+2026/05/06 16:42:06 INFO:     Received SIGTERM, exiting.
+2026/05/06 16:42:06 INFO:     Terminated child process [418973]
+2026/05/06 16:42:06 INFO:     Terminated child process [418974]
+2026/05/06 16:42:06 INFO:     Terminated child process [418975]
+2026/05/06 16:42:06 INFO:     Terminated child process [418977]
+2026/05/06 16:42:06 INFO:     Waiting for child process [418973]
+2026/05/06 16:42:17 INFO:     Started server process [418975]
+2026/05/06 16:42:17 INFO:     Waiting for application startup.
+2026/05/06 16:42:17 INFO:     Application startup complete.
+2026/05/06 16:42:17 INFO:     Shutting down
+2026/05/06 16:42:17 INFO:     Waiting for application shutdown.
+2026/05/06 16:42:17 INFO:     Application shutdown complete.
+2026/05/06 16:42:17 INFO:     Finished server process [418975]
+2026/05/06 16:42:18 INFO:     Started server process [418974]
+2026/05/06 16:42:18 INFO:     Waiting for application startup.
+2026/05/06 16:42:18 INFO:     Application startup complete.
+2026/05/06 16:42:18 INFO:     Shutting down
+2026/05/06 16:42:18 INFO:     Waiting for application shutdown.
+2026/05/06 16:42:18 INFO:     Application shutdown complete.
+2026/05/06 16:42:18 INFO:     Finished server process [418974]
+2026/05/06 16:42:19 INFO:     Started server process [418973]
+2026/05/06 16:42:19 INFO:     Waiting for application startup.
+2026/05/06 16:42:19 INFO:     Application startup complete.
+2026/05/06 16:42:19 INFO:     Shutting down
+2026/05/06 16:42:19 INFO:     Waiting for application shutdown.
+2026/05/06 16:42:19 INFO:     Application shutdown complete.
+2026/05/06 16:42:19 INFO:     Finished server process [418973]
+2026/05/06 16:42:19 INFO:     Waiting for child process [418974]
+2026/05/06 16:42:19 INFO:     Waiting for child process [418975]
+2026/05/06 16:42:19 INFO:     Waiting for child process [418977]
+2026/05/06 16:42:20 INFO:     Started server process [418977]
+2026/05/06 16:42:20 INFO:     Waiting for application startup.
+2026/05/06 16:42:20 INFO:     Application startup complete.
+2026/05/06 16:42:20 INFO:     Shutting down
+2026/05/06 16:42:20 INFO:     Waiting for application shutdown.
+2026/05/06 16:42:20 INFO:     Application shutdown complete.
+2026/05/06 16:42:20 INFO:     Finished server process [418977]
+2026/05/06 16:42:20 INFO:     Stopping parent process [418956]

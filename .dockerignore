@@ -1,0 +1,14 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.git/
+.dvc/
+data/raw/
+data/processed/
+mlflow.db
+tests/
+notebooks/
+.pytest_cache/
+.github/
+.ipynb_checkpoints/

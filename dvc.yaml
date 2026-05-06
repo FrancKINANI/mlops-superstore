@@ -1,0 +1,50 @@
+# dvc.yaml — Pipeline MLOps Superstore
+# Exécuter le pipeline complet : dvc repro
+# Visualiser le DAG          : dvc dag
+
+stages:
+
+  # ──────────────────────────────────────────
+  # 1. PREPROCESSING
+  #    Transforme le CSV brut en features prêtes
+  #    pour la modélisation (feature engineering,
+  #    sélection de colonnes, nettoyage).
+  # ──────────────────────────────────────────
+  preprocessing:
+    cmd: python data/preprocessing.py
+    deps:
+      - data/preprocessing.py
+      - data/raw/Superstore.csv
+    outs:
+      - data/processed/Superstore_processed.csv
+
+  # ──────────────────────────────────────────
+  # 2. TRAIN
+  #    Entraîne 3 modèles (LogisticRegression,
+  #    RandomForest, GradientBoosting), log les
+  #    métriques et artefacts dans MLflow.
+  # ──────────────────────────────────────────
+  train:
+    cmd: python src/models/train.py
+    deps:
+      - src/models/train.py
+      - data/preprocessing.py
+      - data/processed/Superstore_processed.csv
+    outs:
+      - mlflow.db:
+          persist: true
+      - mlartifacts:
+          persist: true
+
+  # ──────────────────────────────────────────
+  # 3. REGISTER
+  #    Promeut le meilleur modèle (Gradient
+  #    Boosting) vers le stage Production dans
+  #    le MLflow Model Registry.
+  # ──────────────────────────────────────────
+  register:
+    cmd: python src/models/register_model.py
+    deps:
+      - src/models/register_model.py
+      - src/models/train.py
+      - mlflow.db

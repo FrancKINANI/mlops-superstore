@@ -20,6 +20,8 @@ from sklearn.pipeline import Pipeline
 
 import sys
 import os
+import git
+import yaml
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from data.preprocessing import run_preprocessing, build_preprocessor
@@ -27,6 +29,31 @@ from data.preprocessing import run_preprocessing, build_preprocessor
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────
+# HELPERS VERSIONING
+# ─────────────────────────────────────────
+
+def get_git_revision_hash() -> str:
+    """Récupère le commit hash actuel."""
+    try:
+        repo = git.Repo(search_parent_directories=True)
+        return repo.head.object.hexsha
+    except Exception:
+        return "unknown"
+
+def get_dvc_data_version(path: str) -> str:
+    """Récupère le MD5 du fichier de données depuis son fichier .dvc."""
+    try:
+        dvc_path = path + ".dvc"
+        if os.path.exists(dvc_path):
+            with open(dvc_path, 'r') as f:
+                dvc_data = yaml.safe_load(f)
+                return dvc_data['outs'][0]['md5']
+        return "unknown"
+    except Exception:
+        return "unknown"
 
 
 # ─────────────────────────────────────────
@@ -140,6 +167,10 @@ def train_all_models():
         logger.info(f"\nEntraînement : {model_name}")
 
         with mlflow.start_run(run_name=model_name):
+
+            # ── Versioning : Git & DVC ──
+            mlflow.set_tag("git_commit", get_git_revision_hash())
+            mlflow.set_tag("data_version", get_dvc_data_version(DATA_PATH))
 
             # Pipeline complet : preprocessing + modèle
             full_pipeline = Pipeline([

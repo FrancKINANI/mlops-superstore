@@ -12,6 +12,7 @@ import os
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.bash import BashOperator
 
 # ─────────────────────────────────────────
 # CONFIGURATION
@@ -85,103 +86,32 @@ task_validate = PythonOperator(
     dag             = dag,
 )
 
+
+
 # ─────────────────────────────────────────
-# TÂCHE 2 — PREPROCESSING
+# TÂCHE 2 — DVC REPRO
 # ─────────────────────────────────────────
 
-def run_preprocessing_task(**context):
-    sys.path.insert(0, PROJECT_ROOT)
-    from data.preprocessing import run_preprocessing
-
-    input_path  = os.path.join(PROJECT_ROOT, "data/raw/Superstore.csv")
-    output_path = os.path.join(PROJECT_ROOT, "data/processed/Superstore_processed.csv")
-
-    X, y = run_preprocessing(input_path, output_path)
-
-    print(f"Preprocessing terminé — X: {X.shape}, y: {y.shape}")
-    print(f"Classe 0 (pertes)    : {(y==0).sum()} ({(y==0).mean():.1%})")
-    print(f"Classe 1 (rentables) : {(y==1).sum()} ({(y==1).mean():.1%})")
-
-    context['ti'].xcom_push(key='n_features', value=X.shape[1])
-    context['ti'].xcom_push(key='n_samples',  value=X.shape[0])
-
-task_preprocess = PythonOperator(
-    task_id         = "preprocess_data",
-    python_callable = run_preprocessing_task,
-    dag             = dag,
+task_dvc_repro = BashOperator(
+    task_id = "dvc_repro",
+    bash_command = f"cd {PROJECT_ROOT} && venv/bin/dvc repro",
+    env = {
+        **os.environ,
+        "MLFLOW_TRACKING_URI": "http://localhost:5000",
+    },
+    dag = dag,
 )
 
 # ─────────────────────────────────────────
-# TÂCHE 3 — ENTRAÎNEMENT
-# ─────────────────────────────────────────
-
-def run_training_task(**context):
-    sys.path.insert(0, PROJECT_ROOT)
-    from src.models.train import train_all_models
-
-    best_name, best_f1 = train_all_models()
-
-    print(f"Meilleur modèle : {best_name} (F1={best_f1:.4f})")
-
-    # Seuil qualité minimum — bloque le pipeline si insuffisant
-    assert best_f1 >= 0.85, \
-        f"F1 insuffisant : {best_f1:.4f} < 0.85. Pipeline interrompu."
-
-    context['ti'].xcom_push(key='best_model_name', value=best_name)
-    context['ti'].xcom_push(key='best_f1',         value=best_f1)
-
-task_train = PythonOperator(
-    task_id         = "train_models",
-    python_callable = run_training_task,
-    dag             = dag,
-)
-
-# ─────────────────────────────────────────
-# TÂCHE 4 — MODEL REGISTRY
-# ─────────────────────────────────────────
-
-def run_registry_task(**context):
-    sys.path.insert(0, PROJECT_ROOT)
-    from src.models.register_model import promote_to_production
-
-    best_name = context['ti'].xcom_pull(
-        task_ids = 'train_models',
-        key      = 'best_model_name'
-    )
-    best_f1 = context['ti'].xcom_pull(
-        task_ids = 'train_models',
-        key      = 'best_f1'
-    )
-
-    print(f"Promotion en Production : {best_name} (F1={best_f1:.4f})")
-    promote_to_production()
-
-task_register = PythonOperator(
-    task_id         = "register_model",
-    python_callable = run_registry_task,
-    dag             = dag,
-)
-
-# ─────────────────────────────────────────
-# TÂCHE 5 — NOTIFICATION FINALE
+# TÂCHE 3 — NOTIFICATION FINALE
 # ─────────────────────────────────────────
 
 def notify_success(**context):
-    ti = context['ti']
-
-    row_count       = ti.xcom_pull(task_ids='validate_data',  key='row_count')
-    profitable_rate = ti.xcom_pull(task_ids='validate_data',  key='profitable_rate')
-    best_name       = ti.xcom_pull(task_ids='train_models',   key='best_model_name')
-    best_f1         = ti.xcom_pull(task_ids='train_models',   key='best_f1')
-
     print("=" * 50)
-    print("   PIPELINE MLOPS TERMINÉ AVEC SUCCÈS")
+    print("   PIPELINE DVC / MLOPS TERMINÉ")
     print("=" * 50)
-    print(f"  Données      : {row_count} lignes")
-    print(f"  Rentabilité  : {profitable_rate:.1%}")
-    print(f"  Meilleur     : {best_name}")
-    print(f"  F1-Score     : {best_f1:.4f}")
-    print(f"  Statut       : Production ✅")
+    print("  Consulter MLflow pour les métriques et artefacts.")
+    print("  DVC a synchronisé les données et modèles.")
     print("=" * 50)
 
 task_notify = PythonOperator(
@@ -194,4 +124,4 @@ task_notify = PythonOperator(
 # DÉPENDANCES — Ordre d'exécution
 # ─────────────────────────────────────────
 
-start >> task_validate >> task_preprocess >> task_train >> task_register >> task_notify
+start >> task_validate >> task_dvc_repro >> task_notify
