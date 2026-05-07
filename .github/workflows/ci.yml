@@ -1,0 +1,109 @@
+# .github/workflows/ci.yml
+name: MLOps CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Tests & Validation
+
+    steps:
+      # 1. Récupère le code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Configure Python 3.13
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      # 3. Installe les dépendances
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. Vérifie la qualité du code
+      - name: Code quality check (Flake8)
+        run: |
+          pip install flake8
+          flake8 src/ tests/ \
+            --max-line-length=100 \
+            --exclude=__pycache__ \
+            --count \
+            --statistics
+        continue-on-error: true  # Ne bloque pas le pipeline sur le style
+
+      # 5. Lance les tests Pytest
+      - name: Run Pytest
+        run: |
+          pip install pytest
+          python -m pytest tests/ -v \
+            --tb=short \
+            --junit-xml=reports/pytest-results.xml
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
+      # 6. Télécharge les données DVC depuis Google Drive
+      #    (désactivé en CI — on génère des données de test minimales)
+      - name: Create minimal test dataset
+        run: |
+          python - <<'EOF'
+          import pandas as pd, numpy as np, os
+
+          os.makedirs("data/raw", exist_ok=True)
+          os.makedirs("data/processed", exist_ok=True)
+
+          # Dataset minimal qui respecte le schéma Superstore
+          n = 200
+          np.random.seed(42)
+          df = pd.DataFrame({
+              'Row ID':       range(1, n+1),
+              'Order ID':     [f'CA-2024-{i}' for i in range(n)],
+              'Order Date':   ['01/01/2024'] * n,
+              'Ship Date':    ['05/01/2024'] * n,
+              'Ship Mode':    np.random.choice(['Standard Class','First Class'], n),
+              'Customer ID':  [f'CG-{i}' for i in range(n)],
+              'Customer Name':[f'Customer {i}' for i in range(n)],
+              'Segment':      np.random.choice(['Consumer','Corporate','Home Office'], n),
+              'Country':      ['United States'] * n,
+              'City':         ['Los Angeles'] * n,
+              'State':        ['California'] * n,
+              'Postal Code':  [90032] * n,
+              'Region':       np.random.choice(['West','East','Central','South'], n),
+              'Product ID':   [f'FUR-{i}' for i in range(n)],
+              'Category':     np.random.choice(['Furniture','Office Supplies','Technology'], n),
+              'Sub-Category': np.random.choice(['Chairs','Phones','Binders'], n),
+              'Product Name': [f'Product {i}' for i in range(n)],
+              'Sales':        np.random.uniform(10, 1000, n),
+              'Quantity':     np.random.randint(1, 10, n),
+              'Discount':     np.random.uniform(0, 0.5, n),
+              'Profit':       np.random.uniform(-100, 500, n),
+          })
+          df.to_csv('data/raw/superstore.csv', index=False, encoding='latin-1')
+          print(f"Dataset de test créé : {df.shape}")
+          EOF
+
+      # 7. Validation Great Expectations
+      - name: Data Validation (Great Expectations)
+        run: |
+          python src/data/data_validation.py
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
+      # 8. Upload des rapports comme artefacts CI
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-reports
+          path: |
+            reports/pytest-results.xml
+            monitoring/reports/
