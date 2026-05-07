@@ -13,7 +13,7 @@ from evidently import Dataset, DataDefinition
 from evidently.presets import DataDriftPreset
 from evidently import Report
 
-from data.preprocessing import (
+from src.data.preprocessing import (
     load_data, create_target, engineer_features,
     select_features, NUM_FEATURES, CAT_FEATURES
 )

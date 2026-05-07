@@ -11,9 +11,9 @@ stages:
   #    sélection de colonnes, nettoyage).
   # ──────────────────────────────────────────
   preprocessing:
-    cmd: python data/preprocessing.py
+    cmd: python src/data/preprocessing.py
     deps:
-      - data/preprocessing.py
+      - src/data/preprocessing.py
       - data/raw/Superstore.csv
     outs:
       - data/processed/Superstore_processed.csv
@@ -28,7 +28,7 @@ stages:
     cmd: python src/models/train.py
     deps:
       - src/models/train.py
-      - data/preprocessing.py
+      - src/data/preprocessing.py
       - data/processed/Superstore_processed.csv
     outs:
       - mlflow.db:

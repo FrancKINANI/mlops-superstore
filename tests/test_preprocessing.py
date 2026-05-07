@@ -11,7 +11,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from data.preprocessing import (
+from src.data.preprocessing import (
     load_data, create_target, engineer_features,
     select_features, build_preprocessor,
     COLS_TO_DROP, CAT_FEATURES, NUM_FEATURES

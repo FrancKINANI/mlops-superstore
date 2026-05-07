@@ -24,7 +24,7 @@ import git
 import yaml
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-from data.preprocessing import run_preprocessing, build_preprocessor
+from src.data.preprocessing import run_preprocessing, build_preprocessor
 
 import logging
 logging.basicConfig(level=logging.INFO)

@@ -62,16 +62,19 @@ def validate_data(**context):
 
     df = pd.read_csv(data_path, encoding='latin-1')
 
-    assert df.shape[0] > 1000, \
-        f"Dataset trop petit : {df.shape[0]} lignes"
+    if df.shape[0] <= 1000:
+        raise ValueError(f"Dataset trop petit : {df.shape[0]} lignes")
 
     required_cols = ['Sales', 'Profit', 'Discount', 'Category', 'Region', 'Segment']
     missing = [c for c in required_cols if c not in df.columns]
-    assert len(missing) == 0, f"Colonnes manquantes : {missing}"
+    if missing:
+        raise ValueError(f"Colonnes manquantes : {missing}")
 
     profitable_rate = (df['Profit'] > 0).mean()
-    assert 0.5 < profitable_rate < 1.0, \
-        f"Distribution cible anormale : {profitable_rate:.2%}"
+    if not (0.5 < profitable_rate < 1.0):
+        raise ValueError(
+            f"Distribution cible anormale : {profitable_rate:.2%}"
+        )
 
     print(f"Validation réussie — {df.shape[0]} lignes")
     print(f"Taux de rentabilité : {profitable_rate:.1%}")
@@ -86,10 +89,39 @@ task_validate = PythonOperator(
     dag             = dag,
 )
 
+# ─────────────────────────────────────────
+# TÂCHE 2 — Great Expectations
+# ─────────────────────────────────────────
+
+
+def run_great_expectations(**context):
+    if PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, PROJECT_ROOT)
+    from src.data.data_validation import validate_raw_data
+
+    result = validate_raw_data(
+        os.path.join(PROJECT_ROOT, "data/raw/Superstore.csv")
+    )
+
+    if not result['success']:
+        raise RuntimeError(
+            f"Great Expectations échoué : {result['failed']} règles non respectées"
+        )
+
+    context['ti'].xcom_push(key='ge_passed', value=result['passed'])
+    context['ti'].xcom_push(key='ge_total',  value=result['total'])
+    print(f"GE Validation : {result['passed']}/{result['total']} ✅")
+
+task_ge = PythonOperator(
+    task_id         = "great_expectations_validation",
+    python_callable = run_great_expectations,
+    dag             = dag,
+)
+
 
 
 # ─────────────────────────────────────────
-# TÂCHE 2 — DVC REPRO
+# TÂCHE 3 — DVC REPRO
 # ─────────────────────────────────────────
 
 task_dvc_repro = BashOperator(
@@ -103,7 +135,7 @@ task_dvc_repro = BashOperator(
 )
 
 # ─────────────────────────────────────────
-# TÂCHE 3 — NOTIFICATION FINALE
+# TÂCHE 4 — NOTIFICATION FINALE
 # ─────────────────────────────────────────
 
 def notify_success(**context):
@@ -124,4 +156,4 @@ task_notify = PythonOperator(
 # DÉPENDANCES — Ordre d'exécution
 # ─────────────────────────────────────────
 
-start >> task_validate >> task_dvc_repro >> task_notify
+start >> task_validate >> task_ge >>  task_dvc_repro >> task_notify

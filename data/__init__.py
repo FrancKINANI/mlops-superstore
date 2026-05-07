@@ -1,1 +1,0 @@
-# Superstore data package
