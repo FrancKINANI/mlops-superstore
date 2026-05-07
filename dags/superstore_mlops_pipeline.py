@@ -126,11 +126,7 @@ task_ge = PythonOperator(
 
 task_dvc_repro = BashOperator(
     task_id = "dvc_repro",
-    bash_command = f"cd {PROJECT_ROOT} && venv/bin/dvc repro",
-    env = {
-        **os.environ,
-        "MLFLOW_TRACKING_URI": "http://localhost:5000",
-    },
+    bash_command = f"cd {PROJECT_ROOT} && MLFLOW_TRACKING_URI=http://localhost:5000 venv/bin/dvc repro",
     dag = dag,
 )
 

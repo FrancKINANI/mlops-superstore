@@ -11,7 +11,7 @@ stages:
   #    sélection de colonnes, nettoyage).
   # ──────────────────────────────────────────
   preprocessing:
-    cmd: python src/data/preprocessing.py
+    cmd: venv/bin/python src/data/preprocessing.py
     deps:
       - src/data/preprocessing.py
       - data/raw/Superstore.csv
@@ -25,7 +25,7 @@ stages:
   #    métriques et artefacts dans MLflow.
   # ──────────────────────────────────────────
   train:
-    cmd: python src/models/train.py
+    cmd: venv/bin/python src/models/train.py
     deps:
       - src/models/train.py
       - src/data/preprocessing.py
@@ -43,7 +43,7 @@ stages:
   #    le MLflow Model Registry.
   # ──────────────────────────────────────────
   register:
-    cmd: python src/models/register_model.py
+    cmd: venv/bin/python src/models/register_model.py
     deps:
       - src/models/register_model.py
       - src/models/train.py

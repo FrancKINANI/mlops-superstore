@@ -1,0 +1,58 @@
+schema: '2.0'
+stages:
+  preprocessing:
+    cmd: venv/bin/python src/data/preprocessing.py
+    deps:
+    - path: data/raw/Superstore.csv
+      hash: md5
+      md5: b3066905e9eb4d477453d473dbf20c02
+      size: 2287806
+    - path: src/data/preprocessing.py
+      hash: md5
+      md5: 978d0231c042b1e6a3be71284f23a52b
+      size: 6085
+    outs:
+    - path: data/processed/Superstore_processed.csv
+      hash: md5
+      md5: 853000a18847b077b9f21fea51c914e4
+      size: 824605
+  train:
+    cmd: venv/bin/python src/models/train.py
+    deps:
+    - path: data/processed/Superstore_processed.csv
+      hash: md5
+      md5: 853000a18847b077b9f21fea51c914e4
+      size: 824605
+    - path: src/data/preprocessing.py
+      hash: md5
+      md5: 978d0231c042b1e6a3be71284f23a52b
+      size: 6085
+    - path: src/models/train.py
+      hash: md5
+      md5: 878a42f913aeea141649eba895086004
+      size: 8177
+    outs:
+    - path: mlartifacts
+      hash: md5
+      md5: c0a75a5e0fda0dba39eeb85c627c57d1.dir
+      size: 43678644
+      nfiles: 60
+    - path: mlflow.db
+      hash: md5
+      md5: 23ea9fffc0e2a509b978433f56530cd1
+      size: 1323008
+  register:
+    cmd: venv/bin/python src/models/register_model.py
+    deps:
+    - path: mlflow.db
+      hash: md5
+      md5: 6ba45bfd066367a3712b30179718e708
+      size: 1323008
+    - path: src/models/register_model.py
+      hash: md5
+      md5: 9853a15443edc00b27eef00fbde18f41
+      size: 3269
+    - path: src/models/train.py
+      hash: md5
+      md5: 878a42f913aeea141649eba895086004
+      size: 8177
