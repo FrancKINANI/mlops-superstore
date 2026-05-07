@@ -67,7 +67,7 @@ jobs:
               'Discount':     np.random.uniform(0, 0.5, n),
               'Profit':       np.random.uniform(-100, 500, n),
           })
-          df.to_csv('data/raw/superstore.csv', index=False, encoding='latin-1')
+          df.to_csv('data/raw/Superstore.csv', index=False, encoding='latin-1')
           print(f"Dataset CI créé : {df.shape}")
           EOF
 
