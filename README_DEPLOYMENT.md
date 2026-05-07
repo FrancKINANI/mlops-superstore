@@ -1,4 +1,9 @@
-# Déploiement automatique avec Docker
+## Déploiement automatique avec Docker
+
+Ce projet utilise **Docker Compose** pour orchestrer trois services clés :
+1. **superstore-api** : L'API FastAPI d'inférence.
+2. **prometheus** : Collecteur de métriques de performance.
+3. **grafana** : Visualisation des métriques en temps réel.
 
 ## Processus de déploiement
 
@@ -88,7 +93,7 @@ mlartifacts/1/models/
 
                     ↓
 
-Docker Image (superstore-api:latest)
+Docker Image (superstore-api:v1)
 └── /app/mlartifacts/.../model.pkl ← Chargé par l'API
 ```
 

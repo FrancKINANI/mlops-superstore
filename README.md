@@ -8,16 +8,40 @@ The goal is to classify transactions as either:
 - **Not Profitable (0):** Profit ≤ 0
 
 ## 🛠 Tech Stack
-- **Languages:** Python 3.x
+- **Languages:** Python 3.12+
 - **Data Handling:** Pandas, NumPy
-- **Machine Learning:** Scikit-learn (Logistic Regression, Random Forest, Gradient Boosting)
+- **Machine Learning:** Scikit-learn
 - **Data Versioning:** [DVC (Data Version Control)](https://dvc.org/)
 - **Experiment Tracking:** [MLflow](https://mlflow.org/)
-- **API (Placeholder):** FastAPI / Flask
-- **Orchestration (Placeholder):** Airflow
+- **API:** FastAPI + Uvicorn
+- **Monitoring:** [Prometheus](https://prometheus.io/) & [Grafana](https://grafana.com/)
+- **Orchestration:** Airflow 3.x
 - **Visualization:** Matplotlib, Seaborn
 
-## 📂 Project Structure
+## 📊 Monitoring (Observability)
+The project includes a complete monitoring stack to track API performance and model health.
+
+### 1. Start Monitoring Services
+Ensure the API is running, then Prometheus and Grafana will automatically start collecting data:
+```bash
+docker compose up -d
+```
+
+### 2. Available Dashboards
+- **Prometheus UI:** [http://localhost:9090](http://localhost:9090) (Check targets and raw metrics)
+- **Grafana UI:** [http://localhost:3000](http://localhost:3000) (User: `admin` / Pass: `admin`)
+
+### 3. Key Metrics Tracked
+- **Volume:** Requests per second (Total vs `/predict`)
+- **Latency:** Inference time (P95 quantile)
+- **Reliability:** Success rate (HTTP 200 vs 500)
+- **Resource Usage:** RAM (Resident Memory) and CPU consumption.
+
+### 4. Customizing Grafana
+You can create custom panels using PromQL. For example, to track RAM usage:
+`process_resident_memory_bytes / 1024 / 1024` (in MiB).
+
+## 🚀 API Deployment (Inference)
 ```text
 mlops-superstore/
 ├── data/               # Data directory (managed by DVC)

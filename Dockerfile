@@ -23,6 +23,7 @@ WORKDIR /app
 # Dépendances système minimales pour le runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copie du venv

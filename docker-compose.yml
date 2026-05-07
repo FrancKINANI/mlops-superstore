@@ -1,15 +1,24 @@
+# docker-compose.yml
 services:
+
+  # ─────────────────────────────────────────
+  # API FastAPI — Inférence
+  # ─────────────────────────────────────────
   superstore-api:
     build:
       context: .
       dockerfile: Dockerfile
+    image: superstore-api:v1
     container_name: superstore-api
     ports:
       - "8000:8000"
     environment:
-      - MODEL_PATH=/app/mlartifacts/1/models/m-f612a2259fc642ceb2d7071cb9334223/artifacts/model.pkl
+      - MODEL_PATH=/app/mlartifacts/1/models/m-da6b606d3b93460f848c0ee5eadbfc72/artifacts/model.pkl
       - MODEL_NAME=superstore_GradientBoosting
       - MODEL_STAGE=Production
+      - MLFLOW_TRACKING_URI=http://host.docker.internal:5000
+    volumes:
+      - ./mlartifacts:/app/mlartifacts:ro  # accès aux artefacts MLflow en lecture seule
     deploy:
       resources:
         limits:
@@ -21,3 +30,65 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    networks:
+      - monitoring
+
+  # ─────────────────────────────────────────
+  # Prometheus — Collecte des métriques
+  # ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    restart: unless-stopped
+    depends_on:
+      superstore-api:
+        condition: service_healthy  
+    networks:
+      - monitoring
+
+  # ─────────────────────────────────────────
+  # Grafana — Visualisation des métriques
+  # ─────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      # Provisionne automatiquement Prometheus comme datasource
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+
+# ─────────────────────────────────────────
+# Réseau partagé entre les services
+# ─────────────────────────────────────────
+networks:
+  monitoring:
+    driver: bridge
+
+# ─────────────────────────────────────────
+# Volumes persistants
+# ─────────────────────────────────────────
+volumes:
+  prometheus-data: 
+  grafana-data:

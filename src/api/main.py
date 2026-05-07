@@ -5,6 +5,7 @@ Charge le modèle depuis un fichier local (variable d'environnement MODEL_PATH)
 """
 
 from fastapi import FastAPI, HTTPException, Depends
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 import pickle
 import pandas as pd
@@ -84,6 +85,8 @@ app = FastAPI(
     description = "Prédit si une transaction sera rentable",
     version     = "2.0.0"
 )
+
+Instrumentator().instrument(app).expose(app)
 
 @app.get("/")
 def root():
