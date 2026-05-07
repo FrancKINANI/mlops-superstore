@@ -13,46 +13,27 @@ jobs:
     name: Tests & Validation
 
     steps:
-      # 1. Récupère le code
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Configure Python 3.13
       - name: Setup Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
           cache: "pip"
 
-      # 3. Installe les dépendances
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. Vérifie la qualité du code
       - name: Code quality check (Flake8)
         run: |
           pip install flake8
-          flake8 src/ tests/ \
-            --max-line-length=100 \
-            --exclude=__pycache__ \
-            --count \
-            --statistics
-        continue-on-error: true  # Ne bloque pas le pipeline sur le style
+          flake8 src/ tests/ --max-line-length=100 --exclude=__pycache__
+        continue-on-error: true
 
-      # 5. Lance les tests Pytest
-      - name: Run Pytest
-        run: |
-          pip install pytest
-          python -m pytest tests/ -v \
-            --tb=short \
-            --junit-xml=reports/pytest-results.xml
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-
-      # 6. Télécharge les données DVC depuis Google Drive
-      #    (désactivé en CI — on génère des données de test minimales)
+      # ← ÉTAPE DÉPLACÉE ICI — avant Pytest
       - name: Create minimal test dataset
         run: |
           python - <<'EOF'
@@ -61,8 +42,7 @@ jobs:
           os.makedirs("data/raw", exist_ok=True)
           os.makedirs("data/processed", exist_ok=True)
 
-          # Dataset minimal qui respecte le schéma Superstore
-          n = 200
+          n = 500
           np.random.seed(42)
           df = pd.DataFrame({
               'Row ID':       range(1, n+1),
@@ -88,22 +68,26 @@ jobs:
               'Profit':       np.random.uniform(-100, 500, n),
           })
           df.to_csv('data/raw/superstore.csv', index=False, encoding='latin-1')
-          print(f"Dataset de test créé : {df.shape}")
+          print(f"Dataset CI créé : {df.shape}")
           EOF
 
-      # 7. Validation Great Expectations
+      - name: Run Pytest
+        run: |
+          pip install pytest
+          python -m pytest tests/ -v --tb=short
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
       - name: Data Validation (Great Expectations)
         run: |
+          python src/data/preprocessing.py
           python src/data/data_validation.py
         env:
           PYTHONPATH: ${{ github.workspace }}
 
-      # 8. Upload des rapports comme artefacts CI
       - name: Upload test reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ci-reports
-          path: |
-            reports/pytest-results.xml
-            monitoring/reports/
+          path: monitoring/reports/
