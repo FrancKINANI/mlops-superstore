@@ -53,11 +53,14 @@ dvc pull
 ```
 
 ### 3. Running the Pipeline
+This repository now includes dedicated pipeline scripts under `scripts/` and a root `Makefile` for convenience.
 
 #### A. Preprocessing
 Prepare the data for training:
 ```bash
-python data/preprocessing.py
+bash scripts/preprocess.sh
+# or
+make preprocess
 ```
 
 #### B. Model Training & Tracking
@@ -67,13 +70,25 @@ Train multiple models and log results to MLflow:
 mlflow server --host 127.0.0.1 --port 5000
 
 # Run training script
-python src/models/train.py
+bash scripts/train.sh
+# or
+make train
 ```
 
 #### C. Model Registration
 Promote the best-performing model to the **Production** stage:
 ```bash
-python src/models/register_model.py
+bash scripts/register.sh
+# or
+make register
+```
+
+#### D. Full Pipeline
+Run the entire DVC pipeline end-to-end:
+```bash
+bash scripts/run_pipeline.sh
+# or
+make pipeline
 ```
 
 ## ⛅ Airflow Orchestration

@@ -1,7 +1,7 @@
 # src/api/main.py
 """
 API d'inférence — Superstore Profitability Prediction
-Charge le modèle depuis le fichier local (bypass MLflow)
+Charge le modèle depuis un fichier local (variable d'environnement MODEL_PATH)
 """
 
 from fastapi import FastAPI, HTTPException, Depends
@@ -19,11 +19,12 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # ─────────────────────────────────────────
 
-# Chemin local du modèle (injecté via volume ou variable d'env)
-DEFAULT_MODEL_PATH = "/app/mlartifacts/1/m-2acd3303576e4ab2967290e07fa3d929/artifacts/model.pkl"
-MODEL_PATH = os.getenv("MODEL_PATH", DEFAULT_MODEL_PATH)
+# Récupère le chemin du modèle depuis l'environnement
+MODEL_PATH = os.getenv("MODEL_PATH", "/app/mlartifacts/1/models/m-2acd3303576e4ab2967290e07fa3d929/artifacts/model.pkl")
 MODEL_NAME = os.getenv("MODEL_NAME", "superstore_GradientBoosting")
 MODEL_STAGE = os.getenv("MODEL_STAGE", "Production")
+
+logger.info(f"Configuration: MODEL_PATH={MODEL_PATH}, MODEL_NAME={MODEL_NAME}")
 
 # Cache pour le modèle
 _model = None
@@ -39,9 +40,12 @@ def get_model():
         try:
             with open(MODEL_PATH, 'rb') as f:
                 _model = pickle.load(f)
-            logger.info("Modèle chargé avec succès.")
+            logger.info("✅ Modèle chargé avec succès.")
+        except FileNotFoundError:
+            logger.error(f"❌ Fichier non trouvé: {MODEL_PATH}")
+            raise RuntimeError(f"Impossible de charger le modèle : fichier {MODEL_PATH} non trouvé")
         except Exception as e:
-            logger.error(f"Erreur lors du chargement du modèle : {str(e)}")
+            logger.error(f"❌ Erreur lors du chargement du modèle : {str(e)}")
             raise RuntimeError(f"Impossible de charger le modèle : {str(e)}")
     return _model
 
@@ -78,7 +82,7 @@ class PredictionOutput(BaseModel):
 app = FastAPI(
     title       = "Superstore Profitability API",
     description = "Prédit si une transaction sera rentable",
-    version     = "1.0.0"
+    version     = "2.0.0"
 )
 
 @app.get("/")
@@ -87,11 +91,14 @@ def root():
         "status": "ok", 
         "model": MODEL_NAME, 
         "stage": MODEL_STAGE,
+        "model_path": MODEL_PATH,
     }
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "model_loaded": _model is not None}
+    model_loaded = _model is not None
+    status = "healthy" if model_loaded else "warming_up"
+    return {"status": status, "model_loaded": model_loaded}
 
 @app.post("/predict", response_model=PredictionOutput)
 def predict(data: TransactionInput, model=Depends(get_model)):
@@ -126,5 +133,5 @@ def predict(data: TransactionInput, model=Depends(get_model)):
         )
 
     except Exception as e:
-        logger.error(f"Erreur lors de la prédiction : {str(e)}")
+        logger.error(f"❌ Erreur lors de la prédiction : {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

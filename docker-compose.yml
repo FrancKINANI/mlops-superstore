@@ -6,11 +6,8 @@ services:
     container_name: superstore-api
     ports:
       - "8000:8000"
-    volumes:
-      # Montage du dossier local des artéfacts dans le conteneur
-      - ./mlartifacts:/app/mlartifacts:ro
     environment:
-      - MODEL_PATH=/app/mlartifacts/1/2acd3303576e4ab2967290e07fa3d929/artifacts/model.pkl
+      - MODEL_PATH=/app/mlartifacts/1/models/m-f612a2259fc642ceb2d7071cb9334223/artifacts/model.pkl
       - MODEL_NAME=superstore_GradientBoosting
       - MODEL_STAGE=Production
     deploy:
@@ -18,6 +15,9 @@ services:
         limits:
           memory: 512M
     restart: unless-stopped
-
-# Ce mode évite de reconstruire l'image Docker à chaque nouveau modèle.
-# Il suffit de mettre à jour MODEL_PATH et de faire 'docker compose restart'.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
