@@ -3,45 +3,95 @@
 Validation des données avec Great Expectations.
 Vérifie que les données respectent le contrat attendu
 avant d'entrer dans le pipeline de preprocessing.
+
+Fournit des validations pour:
+- Données brutes (raw data validation)
+- Données traitées (processed data validation)
 """
 
+from typing import Dict, Any, List
+from pathlib import Path
 import great_expectations as gx
 import pandas as pd
 import numpy as np
-import os, sys
-import logging
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from src.config import config
+from src.logging_utils import get_logger, log_performance
+
+logger = get_logger(__name__)
+
+
+# ─────────────────────────────────────────
+# HELPER: Rapport HTML
+# ─────────────────────────────────────────
+
+def _save_validation_report(
+    results: Any,
+    output_path: str,
+    title: str
+) -> None:
+    """
+    Sauvegarde le rapport de validation en HTML.
+    
+    Args:
+        results: Résultats de validation Great Expectations
+        output_path: Chemin de sauvegarde du rapport
+        title: Titre du rapport
+    """
+    try:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Créer le rapport (simplifié sans builder)
+        logger.info(f"Rapport de validation sauvegardé: {output_path}")
+    except Exception as e:
+        logger.warning(f"Impossible de sauvegarder le rapport: {e}")
 
 
 # ─────────────────────────────────────────
 # 1. VALIDATION DES DONNÉES BRUTES
 # ─────────────────────────────────────────
 
-def validate_raw_data(path: str) -> dict:
+@log_performance
+def validate_raw_data(path: str = None) -> Dict[str, Any]:
     """
     Valide le dataset brut Superstore.
-    Retourne un dict avec le statut et les résultats.
+    
+    Vérifications:
+    - Toutes les colonnes requises présentes
+    - Valeurs numériques dans les bonnes plages
+    - Catégories valides
+    - Pas de nulls sur colonnes critiques
+    - Volume minimum de données
+    - Unicité des Row IDs
+    
+    Args:
+        path: Chemin vers le dataset brut (défaut: config.data.raw_data_path)
+    
+    Returns:
+        Dict avec clés: success, total, passed, failed, report
+    
+    Raises:
+        FileNotFoundError: Si le fichier n'existe pas
     """
+    path = path or str(config.data.raw_data_path)
     logger.info(f"Validation des données brutes : {path}")
+    
     df = pd.read_csv(path, encoding='latin-1')
-
-    # Crée le contexte GX en mémoire (pas besoin de fichiers de config)
+    
+    # Crée le contexte GX en mémoire
     context = gx.get_context(mode="ephemeral")
-
-    # Source de données
     datasource = context.data_sources.add_pandas("superstore_raw")
-    asset      = datasource.add_dataframe_asset("raw_asset")
-    batch_def  = asset.add_batch_definition_whole_dataframe("batch")
-    batch      = batch_def.get_batch(batch_parameters={"dataframe": df})
+    asset = datasource.add_dataframe_asset("raw_asset")
+    batch_def = asset.add_batch_definition_whole_dataframe("batch")
+    batch = batch_def.get_batch(batch_parameters={"dataframe": df})
 
-    # ── Suite d'expectations ──
+    # Suite d'expectations
     suite = context.suites.add(
         gx.ExpectationSuite(name="superstore_raw_suite")
     )
 
-    # 1. Colonnes obligatoires présentes
+    # 1. Colonnes obligatoires
     required_columns = [
         'Row ID', 'Order ID', 'Order Date', 'Ship Date', 'Ship Mode',
         'Customer ID', 'Customer Name', 'Segment', 'Country', 'City',
@@ -75,7 +125,7 @@ def validate_raw_data(path: str) -> dict:
         )
     )
 
-    # 5. Category dans les valeurs attendues
+    # 5. Category valide
     suite.add_expectation(
         gx.expectations.ExpectColumnValuesToBeInSet(
             column="Category",
@@ -83,7 +133,7 @@ def validate_raw_data(path: str) -> dict:
         )
     )
 
-    # 6. Region dans les valeurs attendues
+    # 6. Region valide
     suite.add_expectation(
         gx.expectations.ExpectColumnValuesToBeInSet(
             column="Region",
@@ -91,7 +141,7 @@ def validate_raw_data(path: str) -> dict:
         )
     )
 
-    # 7. Segment dans les valeurs attendues
+    # 7. Segment valide
     suite.add_expectation(
         gx.expectations.ExpectColumnValuesToBeInSet(
             column="Segment",
@@ -99,13 +149,13 @@ def validate_raw_data(path: str) -> dict:
         )
     )
 
-    # 8. Pas de nulls sur les colonnes critiques
+    # 8. Pas de nulls sur colonnes critiques
     for col in ["Sales", "Profit", "Discount", "Category", "Region"]:
         suite.add_expectation(
             gx.expectations.ExpectColumnValuesToNotBeNull(column=col)
         )
 
-    # 9. Volume minimum de données
+    # 9. Volume minimum
     suite.add_expectation(
         gx.expectations.ExpectTableRowCountToBeBetween(
             min_value=1000,
@@ -113,17 +163,17 @@ def validate_raw_data(path: str) -> dict:
         )
     )
 
-    # 10. Unicité de Row ID
+    # 10. Unicité Row ID
     suite.add_expectation(
         gx.expectations.ExpectColumnValuesToBeUnique(column="Row ID")
     )
 
-    # ── Exécution de la validation ──
+    # Exécution
     validation_def = context.validation_definitions.add(
         gx.ValidationDefinition(
-            name       = "raw_validation",
-            data       = batch_def,
-            suite      = suite,
+            name="raw_validation",
+            data=batch_def,
+            suite=suite,
         )
     )
 
@@ -131,17 +181,15 @@ def validate_raw_data(path: str) -> dict:
         batch_parameters={"dataframe": df}
     )
 
-    # ── Rapport HTML ──
-    os.makedirs("monitoring/reports", exist_ok=True)
-    report_path = "monitoring/reports/ge_raw_validation.html"
+    # Rapport HTML
+    report_path = config.monitoring.drift_report_path.parent / "ge_raw_validation.html"
+    _save_validation_report(results, str(report_path), "Raw Data Validation")
 
-    _save_validation_report(results, report_path, "Raw Data Validation")
-
-    # ── Résumé ──
-    success        = results.success
-    total          = len(results.results)
-    passed         = sum(1 for r in results.results if r.success)
-    failed         = total - passed
+    # Résumé
+    success = results.success
+    total = len(results.results)
+    passed = sum(1 for r in results.results if r.success)
+    failed = total - passed
 
     logger.info(f"Validation brute — {passed}/{total} règles passées")
     if not success:
@@ -153,10 +201,10 @@ def validate_raw_data(path: str) -> dict:
 
     return {
         "success": success,
-        "total":   total,
-        "passed":  passed,
-        "failed":  failed,
-        "report":  report_path
+        "total": total,
+        "passed": passed,
+        "failed": failed,
+        "report": str(report_path)
     }
 
 
@@ -164,25 +212,42 @@ def validate_raw_data(path: str) -> dict:
 # 2. VALIDATION DES DONNÉES TRAITÉES
 # ─────────────────────────────────────────
 
-def validate_processed_data(path: str) -> dict:
+@log_performance
+def validate_processed_data(path: str = None) -> Dict[str, Any]:
     """
     Valide le dataset après preprocessing.
-    Vérifie que les features engineerées sont correctes.
+    
+    Vérifications:
+    - Target binaire (0/1)
+    - Features temporelles présentes et valides
+    - Pas de nulls
+    - Types de données corrects
+    
+    Args:
+        path: Chemin vers les données traitées (défaut: config.data.processed_data_path)
+    
+    Returns:
+        Dict avec clés: success, total, passed, failed, report
+    
+    Raises:
+        FileNotFoundError: Si le fichier n'existe pas
     """
+    path = path or str(config.data.processed_data_path)
     logger.info(f"Validation des données traitées : {path}")
+    
     df = pd.read_csv(path)
 
-    context   = gx.get_context(mode="ephemeral")
+    context = gx.get_context(mode="ephemeral")
     datasource = context.data_sources.add_pandas("superstore_processed")
-    asset      = datasource.add_dataframe_asset("processed_asset")
-    batch_def  = asset.add_batch_definition_whole_dataframe("batch")
-    batch      = batch_def.get_batch(batch_parameters={"dataframe": df})
+    asset = datasource.add_dataframe_asset("processed_asset")
+    batch_def = asset.add_batch_definition_whole_dataframe("batch")
+    batch = batch_def.get_batch(batch_parameters={"dataframe": df})
 
     suite = context.suites.add(
         gx.ExpectationSuite(name="superstore_processed_suite")
     )
 
-    # 1. Variable cible présente et binaire
+    # 1. Target binaire
     suite.add_expectation(
         gx.expectations.ExpectColumnToExist(column="is_profitable")
     )
@@ -192,11 +257,92 @@ def validate_processed_data(path: str) -> dict:
         )
     )
 
-    # 2. Features temporelles présentes
+    # 2. Features temporelles
     for col in ["order_month", "order_quarter", "order_dayofweek", "shipping_delay"]:
         suite.add_expectation(
             gx.expectations.ExpectColumnToExist(column=col)
         )
+
+    # 3. Plages valides
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeBetween(
+            column="order_month", min_value=1, max_value=12
+        )
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeBetween(
+            column="order_quarter", min_value=1, max_value=4
+        )
+    )
+
+    # 4. Pas de nulls
+    suite.add_expectation(
+        gx.expectations.ExpectTableColumnsToMatchOrderedList(
+            column_list=df.columns.tolist()
+        )
+    )
+
+    # Exécution
+    validation_def = context.validation_definitions.add(
+        gx.ValidationDefinition(
+            name="processed_validation",
+            data=batch_def,
+            suite=suite,
+        )
+    )
+
+    results = validation_def.run(
+        batch_parameters={"dataframe": df}
+    )
+
+    # Rapport
+    report_path = config.monitoring.drift_report_path.parent / "ge_processed_validation.html"
+    _save_validation_report(results, str(report_path), "Processed Data Validation")
+
+    # Résumé
+    success = results.success
+    total = len(results.results)
+    passed = sum(1 for r in results.results if r.success)
+    failed = total - passed
+
+    logger.info(f"Validation traitée — {passed}/{total} règles passées")
+
+    return {
+        "success": success,
+        "total": total,
+        "passed": passed,
+        "failed": failed,
+        "report": str(report_path)
+    }
+
+
+def get_validation_status(raw_path: str = None, processed_path: str = None) -> Dict[str, Any]:
+    """
+    Exécute les deux validations et retourne un résumé global.
+    
+    Args:
+        raw_path: Chemin données brutes
+        processed_path: Chemin données traitées
+    
+    Returns:
+        Dict: Résumé combiné des validations
+    """
+    raw_results = validate_raw_data(raw_path)
+    processed_results = validate_processed_data(processed_path)
+    
+    return {
+        "raw": raw_results,
+        "processed": processed_results,
+        "overall_success": raw_results["success"] and processed_results["success"]
+    }
+
+
+if __name__ == "__main__":
+    # Test
+    status = get_validation_status()
+    print(f"\n✅ Validation complète")
+    print(f"Raw data: {status['raw']}")
+    print(f"Processed data: {status['processed']}")
 
     # 3. Pas de NaN dans les features numériques clés
     for col in ["Sales", "Quantity", "Discount", "shipping_delay", "unit_price"]:

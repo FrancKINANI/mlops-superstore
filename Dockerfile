@@ -43,5 +43,9 @@ USER appuser
 
 EXPOSE 8000
 
+# Healthcheck : vérifie que l'API répond
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
 # Commande de lancement (uvicorn charge l'app depuis le dossier src)
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

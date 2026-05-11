@@ -1,140 +1,435 @@
-# src/api/main.py
 """
-API d'inférence — Superstore Profitability Prediction
-Charge le modèle depuis un fichier local (variable d'environnement MODEL_PATH)
+API d'inférence FastAPI — Superstore Profitability Prediction
+
+Charge le modèle depuis un fichier local ou MLflow Registry.
+Fournit des endpoints pour:
+- Health check
+- Prediction (scoring)
+- Monitoring
+
+Le modèle contient le preprocessor sklearn complet.
 """
 
+from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 import pickle
 import pandas as pd
-import os
+from pathlib import Path
+from datetime import datetime, timedelta
 import logging
 
-# Configuration du logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from src.config import config
+from src.logging_utils import get_logger, log_execution
+
+logger = get_logger(__name__)
 
 # ─────────────────────────────────────────
-# CONFIGURATION
+# CACHE MODEL
 # ─────────────────────────────────────────
 
-# Récupère le chemin du modèle depuis l'environnement
-MODEL_PATH = os.getenv("MODEL_PATH", "/app/mlartifacts/1/models/m-2acd3303576e4ab2967290e07fa3d929/artifacts/model.pkl")
-MODEL_NAME = os.getenv("MODEL_NAME", "superstore_GradientBoosting")
-MODEL_STAGE = os.getenv("MODEL_STAGE", "Production")
+class ModelCache:
+    """Cache du modèle avec TTL."""
+    
+    def __init__(self, ttl_seconds: int = 3600):
+        self.model = None
+        self.preprocessor = None
+        self.loaded_at = None
+        self.ttl_seconds = ttl_seconds
+    
+    def is_expired(self) -> bool:
+        """Vérifie si le cache a expiré."""
+        if self.loaded_at is None:
+            return True
+        return (datetime.now() - self.loaded_at).total_seconds() > self.ttl_seconds
+    
+    def clear(self):
+        """Vide le cache."""
+        self.model = None
+        self.preprocessor = None
+        self.loaded_at = None
 
-logger.info(f"Configuration: MODEL_PATH={MODEL_PATH}, MODEL_NAME={MODEL_NAME}")
 
-# Cache pour le modèle
-_model = None
+_model_cache = ModelCache(ttl_seconds=config.api.cache_ttl)
 
-# ─────────────────────────────────────────
-# CHARGEMENT DU MODÈLE (LAZY)
-# ─────────────────────────────────────────
-
-def get_model():
-    global _model
-    if _model is None:
-        logger.info(f"Tentative de chargement du modèle depuis : {MODEL_PATH}")
-        try:
-            with open(MODEL_PATH, 'rb') as f:
-                _model = pickle.load(f)
-            logger.info("✅ Modèle chargé avec succès.")
-        except FileNotFoundError:
-            logger.error(f"❌ Fichier non trouvé: {MODEL_PATH}")
-            raise RuntimeError(f"Impossible de charger le modèle : fichier {MODEL_PATH} non trouvé")
-        except Exception as e:
-            logger.error(f"❌ Erreur lors du chargement du modèle : {str(e)}")
-            raise RuntimeError(f"Impossible de charger le modèle : {str(e)}")
-    return _model
 
 # ─────────────────────────────────────────
-# SCHÉMA DE LA REQUÊTE
+# SCHÉMAS PYDANTIC
 # ─────────────────────────────────────────
 
 class TransactionInput(BaseModel):
-    Sales:        float = Field(..., gt=0,  description="Chiffre de vente ($)")
-    Quantity:     int   = Field(..., gt=0,  description="Quantité commandée")
-    Discount:     float = Field(..., ge=0, le=1, description="Taux de remise [0-1]")
-    Ship_Mode:    str   = Field(..., description="Mode d'expédition")
-    Segment:      str   = Field(..., description="Segment client")
-    Region:       str   = Field(..., description="Région géographique")
-    Category:     str   = Field(..., description="Catégorie produit")
-    Sub_Category: str   = Field(..., description="Sous-catégorie produit")
-    order_month:      int   = Field(..., ge=1, le=12)
-    order_quarter:    int   = Field(..., ge=1, le=4)
-    order_dayofweek:  int   = Field(..., ge=0, le=6)
-    shipping_delay:   int   = Field(..., ge=0)
-    unit_price:       float = Field(..., gt=0)
+    """Schéma de requête pour les prédictions."""
+    
+    Sales: float = Field(..., gt=0, description="Chiffre de vente ($)")
+    Quantity: int = Field(..., gt=0, description="Quantité commandée")
+    Discount: float = Field(..., ge=0, le=1, description="Taux de remise [0-1]")
+    Ship_Mode: str = Field(..., min_length=1, description="Mode d'expédition")
+    Segment: str = Field(..., min_length=1, description="Segment client")
+    Region: str = Field(..., min_length=1, description="Région géographique")
+    Category: str = Field(..., min_length=1, description="Catégorie produit")
+    Sub_Category: str = Field(..., min_length=1, description="Sous-catégorie produit")
+    order_month: int = Field(..., ge=1, le=12, description="Mois de la commande [1-12]")
+    order_quarter: int = Field(..., ge=1, le=4, description="Trimestre [1-4]")
+    order_dayofweek: int = Field(..., ge=0, le=6, description="Jour de la semaine [0-6]")
+    shipping_delay: int = Field(..., ge=0, description="Délai de livraison (jours)")
+    unit_price: float = Field(..., gt=0, description="Prix unitaire ($)")
+    
+    @validator('Discount')
+    def validate_discount(cls, v):
+        """Valide le discount."""
+        if not (0 <= v <= 1):
+            raise ValueError('Discount doit être entre 0 et 1')
+        return v
+    
+    class Config:
+        """Configuration Pydantic."""
+        json_schema_extra = {
+            "example": {
+                "Sales": 150.0,
+                "Quantity": 2,
+                "Discount": 0.1,
+                "Ship_Mode": "Standard Class",
+                "Segment": "Consumer",
+                "Region": "East",
+                "Category": "Office Supplies",
+                "Sub_Category": "Paper",
+                "order_month": 5,
+                "order_quarter": 2,
+                "order_dayofweek": 2,
+                "shipping_delay": 4,
+                "unit_price": 75.0
+            }
+        }
+
 
 class PredictionOutput(BaseModel):
-    prediction:  int
-    probability: float
-    label:       str
-    model_name:  str
-    model_stage: str
+    """Schéma de réponse pour les prédictions."""
+    
+    prediction: int = Field(..., description="Classe prédite (0 ou 1)")
+    probability: float = Field(..., ge=0, le=1, description="Probabilité de la classe prédite")
+    label: str = Field(..., description="Label lisible ('Rentable' ou 'Non rentable')")
+    confidence: float = Field(..., ge=0, le=1, description="Confiance [0-1]")
+    model_name: str = Field(..., description="Nom du modèle")
+    model_stage: str = Field(..., description="Stage du modèle (Production, Staging, etc)")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Timestamp de la prédiction")
+
+
+class HealthStatus(BaseModel):
+    """Schéma de réponse pour le health check."""
+    
+    status: str = Field(..., description="État du service")
+    model_loaded: bool = Field(..., description="Modèle chargé en mémoire")
+    preprocessor_loaded: bool = Field(..., description="Preprocessor chargé")
+    cache_status: Optional[str] = Field(None, description="État du cache")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ErrorResponse(BaseModel):
+    """Schéma d'erreur standardisé."""
+    
+    error: str
+    detail: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ─────────────────────────────────────────
+# CHARGEMENT DU MODÈLE
+# ─────────────────────────────────────────
+
+def load_model_and_preprocessor() -> tuple:
+    """
+    Charge le modèle et preprocessor depuis les fichiers.
+    
+    Returns:
+        Tuple[model, preprocessor]
+    
+    Raises:
+        RuntimeError: Si les fichiers ne peuvent pas être chargés
+    """
+    model_path = Path(config.api.model_path)
+    preprocessor_path = Path(config.api.preprocessor_path or config.model.preprocessor_save_path / "preprocessor.pkl")
+    
+    logger.info(f"Tentative de chargement du modèle depuis : {model_path}")
+    
+    if not model_path.exists():
+        raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
+    
+    try:
+        with open(model_path, 'rb') as f:
+            model = pickle.load(f)
+        logger.info("✅ Modèle chargé avec succès")
+    except Exception as e:
+        logger.error(f"❌ Erreur lors du chargement du modèle : {str(e)}")
+        raise RuntimeError(f"Impossible de charger le modèle : {str(e)}")
+    
+    # Charger preprocessor si disponible
+    preprocessor = None
+    if preprocessor_path.exists():
+        try:
+            with open(preprocessor_path, 'rb') as f:
+                preprocessor = pickle.load(f)
+            logger.info("✅ Preprocessor chargé avec succès")
+        except Exception as e:
+            logger.warning(f"Impossible de charger le preprocessor: {e}")
+    
+    return model, preprocessor
+
+
+@log_execution
+def get_model() -> tuple:
+    """
+    Récupère le modèle du cache ou le charge si nécessaire.
+    
+    Returns:
+        Tuple[model, preprocessor]: Modèle et preprocessor
+    """
+    # Vérifier le cache
+    if config.api.cache_model and not _model_cache.is_expired():
+        logger.debug("Utilisation du modèle en cache")
+        return _model_cache.model, _model_cache.preprocessor
+    
+    # Charger depuis le disque
+    model, preprocessor = load_model_and_preprocessor()
+    
+    # Mise en cache
+    if config.api.cache_model:
+        _model_cache.model = model
+        _model_cache.preprocessor = preprocessor
+        _model_cache.loaded_at = datetime.now()
+        logger.debug("Modèle mis en cache")
+    
+    return model, preprocessor
+
 
 # ─────────────────────────────────────────
 # APPLICATION FASTAPI
 # ─────────────────────────────────────────
 
 app = FastAPI(
-    title       = "Superstore Profitability API",
-    description = "Prédit si une transaction sera rentable",
-    version     = "2.0.0"
+    title="Superstore Profitability API",
+    description="Prédiction de rentabilité des transactions",
+    version="3.0.0",
+    docs_url="/docs",
+    openapi_url="/openapi.json"
 )
 
-Instrumentator().instrument(app).expose(app)
+# Instrument Prometheus
+if config.api.enable_monitoring:
+    Instrumentator().instrument(app).expose(app)
 
-@app.get("/")
-def root():
+
+# ─────────────────────────────────────────
+# ENDPOINTS
+# ─────────────────────────────────────────
+
+@app.get("/", response_model=Dict[str, str])
+def root() -> Dict[str, str]:
+    """
+    Endpoint racine.
+    
+    Returns:
+        Infos sur l'API et le modèle
+    """
     return {
-        "status": "ok", 
-        "model": MODEL_NAME, 
-        "stage": MODEL_STAGE,
-        "model_path": MODEL_PATH,
+        "status": "ok",
+        "service": "Superstore Profitability Prediction API",
+        "version": "3.0.0",
+        "model": config.api.model_name,
+        "stage": config.api.model_stage
     }
 
-@app.get("/health")
-def health():
-    model_loaded = _model is not None
-    status = "healthy" if model_loaded else "warming_up"
-    return {"status": status, "model_loaded": model_loaded}
+
+@app.get("/health", response_model=HealthStatus)
+def health() -> HealthStatus:
+    """
+    Health check endpoint.
+    
+    Returns:
+        État du service et du modèle
+    """
+    try:
+        model, preprocessor = get_model()
+        cache_status = "valid" if not _model_cache.is_expired() else "expired"
+        
+        return HealthStatus(
+            status="healthy",
+            model_loaded=model is not None,
+            preprocessor_loaded=preprocessor is not None,
+            cache_status=cache_status
+        )
+    except Exception as e:
+        logger.error(f"Health check échoué: {e}")
+        return HealthStatus(
+            status="unhealthy",
+            model_loaded=False,
+            preprocessor_loaded=False,
+            cache_status="error"
+        )
+
 
 @app.post("/predict", response_model=PredictionOutput)
-def predict(data: TransactionInput, model=Depends(get_model)):
+def predict(data: TransactionInput) -> PredictionOutput:
+    """
+    Prédit si une transaction sera rentable.
+    
+    Args:
+        data: Données de la transaction
+    
+    Returns:
+        Prédiction avec probabilité et confiance
+    
+    Raises:
+        HTTPException: Erreur lors de la prédiction
+    """
     try:
-        # Construit le DataFrame attendu par le pipeline sklearn
+        model, preprocessor = get_model()
+        
+        # Construire le DataFrame
         input_df = pd.DataFrame([{
-            "Sales":          data.Sales,
-            "Quantity":       data.Quantity,
-            "Discount":       data.Discount,
-            "Ship Mode":      data.Ship_Mode,
-            "Segment":        data.Segment,
-            "Region":         data.Region,
-            "Category":       data.Category,
-            "Sub-Category":   data.Sub_Category,
-            "order_month":    data.order_month,
-            "order_quarter":  data.order_quarter,
+            "Sales": data.Sales,
+            "Quantity": data.Quantity,
+            "Discount": data.Discount,
+            "Ship Mode": data.Ship_Mode,  # Espace important pour le nom original
+            "Segment": data.Segment,
+            "Region": data.Region,
+            "Category": data.Category,
+            "Sub-Category": data.Sub_Category,
+            "order_month": data.order_month,
+            "order_quarter": data.order_quarter,
             "order_dayofweek": data.order_dayofweek,
             "shipping_delay": data.shipping_delay,
-            "unit_price":     data.unit_price,
+            "unit_price": data.unit_price,
         }])
 
-        prediction  = int(model.predict(input_df)[0])
-        probability = float(model.predict_proba(input_df)[0][prediction])
-        label       = "Rentable" if prediction == 1 else "Non rentable"
+        # Prédiction
+        prediction = int(model.predict(input_df)[0])
+        probabilities = model.predict_proba(input_df)[0]
+        probability = float(probabilities[prediction])
+        confidence = float(max(probabilities))
+        
+        label = "Rentable 💰" if prediction == 1 else "Non rentable ❌"
+
+        # Log prédiction si activé
+        if config.api.log_predictions:
+            logger.info(f"Prédiction: {label}, confidence: {confidence:.4f}")
 
         return PredictionOutput(
-            prediction  = prediction,
-            probability = round(probability, 4),
-            label       = label,
-            model_name  = MODEL_NAME,
-            model_stage = MODEL_STAGE,
+            prediction=prediction,
+            probability=round(probability, 4),
+            label=label,
+            confidence=round(confidence, 4),
+            model_name=config.api.model_name,
+            model_stage=config.api.model_stage
         )
 
     except Exception as e:
         logger.error(f"❌ Erreur lors de la prédiction : {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors de la prédiction: {str(e)}"
+        )
+
+
+@app.post("/batch_predict")
+def batch_predict(transactions: list[TransactionInput]) -> Dict[str, Any]:
+    """
+    Prédiction par batch (plusieurs transactions).
+    
+    Args:
+        transactions: Liste de transactions
+    
+    Returns:
+        Résultats pour chaque transaction
+    """
+    if not transactions:
+        raise HTTPException(status_code=400, detail="Liste vide")
+    
+    if len(transactions) > 1000:
+        raise HTTPException(status_code=400, detail="Maximum 1000 transactions par batch")
+    
+    results = []
+    for i, transaction in enumerate(transactions):
+        try:
+            result = predict(transaction)
+            results.append({"index": i, "result": result})
+        except Exception as e:
+            results.append({"index": i, "error": str(e)})
+    
+    return {
+        "total": len(transactions),
+        "successful": sum(1 for r in results if "result" in r),
+        "failed": sum(1 for r in results if "error" in r),
+        "predictions": results
+    }
+
+
+@app.get("/model/info")
+def model_info() -> Dict[str, Any]:
+    """
+    Informations sur le modèle actuellement chargé.
+    
+    Returns:
+        Détails du modèle
+    """
+    try:
+        model, preprocessor = get_model()
+        
+        return {
+            "name": config.api.model_name,
+            "stage": config.api.model_stage,
+            "path": str(config.api.model_path),
+            "preprocessor_path": str(config.api.preprocessor_path),
+            "model_type": str(type(model).__name__),
+            "cache_enabled": config.api.cache_model,
+            "cache_ttl_seconds": config.api.cache_ttl,
+            "monitoring_enabled": config.api.enable_monitoring
+        }
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    """Handler personnalisé pour les HTTPException."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(
+            error=str(exc.status_code),
+            detail=exc.detail
+        ).dict()
+    )
+
+
+# ─────────────────────────────────────────
+# STARTUP/SHUTDOWN
+# ─────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup_event():
+    """Événement de démarrage."""
+    logger.info("🚀 Démarrage de l'API")
+    try:
+        get_model()
+        logger.info("✅ Modèle chargé au démarrage")
+    except Exception as e:
+        logger.error(f"⚠️  Erreur lors du chargement du modèle: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Événement d'arrêt."""
+    logger.info("🛑 Arrêt de l'API")
+    _model_cache.clear()
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        app,
+        host=config.api.host,
+        port=config.api.port,
+        reload=config.api.reload,
+        workers=config.api.workers
+    )
