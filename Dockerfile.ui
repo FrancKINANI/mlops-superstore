@@ -1,0 +1,51 @@
+# --- Étape 1 : Builder ---
+FROM python:3.12-slim AS builder
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ python3-dev git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Créer un venv isolé
+RUN python -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+
+COPY requirements.txt .
+
+# Installation des outils de base puis des dépendances (globales car Streamlit en a besoin)
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+# --- Étape 2 : Image Finale ---
+FROM python:3.12-slim
+WORKDIR /app
+
+# Dépendances système minimales
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copie du venv
+COPY --from=builder /venv /venv
+
+# Copie de tout le projet
+COPY . .
+
+# Configuration de l'environnement
+ENV PATH="/venv/bin:$PATH"
+ENV PYTHONPATH="/app"
+ENV PYTHONUNBUFFERED=1
+
+# Sécurité
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8501
+
+# Healthcheck Streamlit
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+
+# Commande de lancement pour Streamlit
+CMD ["streamlit", "run", "src/ui/app.py", "--server.port=8501", "--server.address=0.0.0.0"]

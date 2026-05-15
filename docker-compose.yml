@@ -34,6 +34,25 @@ services:
       - monitoring
 
   # ─────────────────────────────────────────
+  # Streamlit UI — Interface utilisateur
+  # ─────────────────────────────────────────
+  superstore-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    image: superstore-ui:v1
+    container_name: superstore-ui
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://superstore-api:8000
+    depends_on:
+      superstore-api:
+        condition: service_healthy
+    networks:
+      - monitoring
+
+  # ─────────────────────────────────────────
   # Prometheus — Collecte des métriques
   # ─────────────────────────────────────────
   prometheus:

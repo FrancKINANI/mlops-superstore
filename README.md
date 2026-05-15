@@ -1,196 +1,125 @@
-# MLOps Superstore Profitability Prediction
+# 💰 MLOps Superstore : Prédiction de Rentabilité
 
-## 📌 Project Overview
-This project aims to predict the **profitability** of retail transactions using the "Superstore" dataset. It's designed as an end-to-end MLOps pipeline, covering data versioning, exploratory data analysis (EDA), automated preprocessing, model training with experiment tracking, and model lifecycle management.
+Ce projet implémente un pipeline MLOps de bout en bout pour prédire la rentabilité des transactions d'une chaîne de magasins (dataset "Superstore"). L'objectif est de transformer un processus d'analyse de données classique en un système industriel automatisé, robuste et monitoré.
 
-The goal is to classify transactions as either:
-- **Profitable (1):** Profit > 0
-- **Not Profitable (0):** Profit ≤ 0
+---
+
+## 📖 Sommaire
+1. [Contexte et Objectifs](#-contexte-et-objectifs)
+2. [Architecture du Système](#-architecture-du-système)
+3. [Cycle de Vie du Modèle (Training Pipeline)](#-cycle-de-vie-du-modèle-training-pipeline)
+4. [Service et Inférence (Serving)](#-service-et-inférence-serving)
+5. [Observabilité et Monitoring](#-observabilité-et-monitoring)
+6. [Guide de Démarrage Rapide](#-guide-de-démarrage-rapide)
+
+---
+
+## 🎯 Contexte et Objectifs
+
+Dans le secteur du retail, comprendre pourquoi certaines transactions sont déficitaires est crucial. Ce projet classifie les transactions en deux catégories :
+- **Rentable (1)** : Profit > 0
+- **Non Rentable (0)** : Profit ≤ 0
+
+### Valeur Métier
+- **Optimisation des prix** : Identifier l'impact des remises (discounts) sur la rentabilité.
+- **Aide à la décision** : Aider les gestionnaires à ajuster les modes d'expédition ou les segments clients ciblés.
+- **Automatisation** : Passer d'une analyse ponctuelle à un service prédictif disponible 24/7.
+
+---
+
+## 🏗 Architecture du Système
+
+Le projet repose sur une architecture modulaire respectant les principes du MLOps :
+
+```text
+[ Données Brutes ] ──> ( DVC ) ──> [ Preprocessing ] ──> ( MLflow ) ──> [ Modèle Production ]
+                                                                             │
+       ┌─────────────────────────────────────────────────────────────────────┘
+       ▼
+[ API FastAPI ] <───> [ UI Streamlit ]
+       │
+       └─> ( Prometheus ) ──> [ Dashboards Grafana ]
+```
+
+---
+
+## ⚙️ Cycle de Vie du Modèle (Training Pipeline)
+
+L'automatisation est assurée par une combinaison de **DVC**, **Airflow** et **MLflow**.
+
+### 1. Gestion des Données (DVC)
+Le dataset `Superstore.csv` est volumineux et ne doit pas être stocké sur Git. DVC (Data Version Control) assure le versionnage des données, permettant de lier chaque version du modèle à la version exacte des données utilisée.
+
+### 2. Pipeline d'Entraînement
+Le pipeline est défini dans `dvc.yaml` et peut être orchestré par Airflow :
+- **Preprocessing** : Nettoyage, encodage des variables catégorielles et feature engineering (ex: calcul du délai de livraison, extraction du mois/trimestre).
+- **Entraînement** : Test de plusieurs algorithmes (Random Forest, Gradient Boosting).
+- **Tracking (MLflow)** : Chaque run enregistre les hyperparamètres, le F1-Score et la courbe ROC-AUC.
+
+### 3. Registre de Modèles
+Le meilleur modèle (actuellement **Gradient Boosting**) est promu au stade **"Production"** dans MLflow. L'API d'inférence charge automatiquement ce modèle sans intervention manuelle.
+
+---
+
+## 🚀 Service et Inférence (Serving)
+
+Le modèle est exposé via deux interfaces complémentaires :
+
+### 1. API Backend (FastAPI)
+- **Endpoint `/predict`** : Reçoit les données JSON et retourne la prédiction avec un score de confiance.
+- **Performance** : Utilise un système de cache pour le modèle afin de garantir des temps de réponse ultra-courts.
+- **Documentation** : Swagger UI intégrée pour faciliter l'intégration par d'autres développeurs.
+
+### 2. Frontend (Streamlit)
+Une interface utilisateur intuitive permettant aux analystes métier de :
+- Saisir manuellement les détails d'une transaction.
+- Visualiser instantanément la probabilité de rentabilité.
+- Faire des tests de type "What-if" (ex: "Que se passe-t-il si j'augmente la remise de 10% ?").
+
+---
+
+## 📊 Observabilité et Monitoring
+
+Déployer un modèle ne suffit pas ; il faut s'assurer qu'il reste performant dans le temps.
+
+- **Prometheus** : Collecte en temps réel les métriques de l'API (nombre de requêtes, taux d'erreur 5xx, latence P95).
+- **Grafana** : Affiche des tableaux de bord pour visualiser la santé du système.
+- **Détection de Dérive (Drift)** : Des scripts (via `evidently`) sont prévus pour comparer les données entrantes avec les données d'entraînement et alerter en cas de dégradation de la performance.
+
+---
+
+## 🚀 Guide de Démarrage Rapide
+
+### Prérequis
+- Python 3.12+
+- Docker & Docker Compose (pour la stack complète)
+- `uv` (recommandé pour la gestion des paquets)
+
+### Installation et Lancement
+Le script `./run_project.sh` est votre point d'entrée unique :
+
+1.  **Setup** : `./run_project.sh setup`
+2.  **Entraîner** : `./run_project.sh training`
+3.  **Tester localement** : `./run_project.sh serving`
+4.  **Déployer la stack complète** : `./run_project.sh docker`
+
+### Accès aux Services
+- **Interface Streamlit** : `http://localhost:8501`
+- **API Swagger** : `http://localhost:8000/docs`
+- **Grafana** : `http://localhost:3000` (admin/admin)
+- **MLflow UI** : `http://localhost:5000`
+
+---
 
 ## 🛠 Tech Stack
-- **Languages:** Python 3.12+
-- **Data Handling:** Pandas, NumPy
-- **Machine Learning:** Scikit-learn
-- **Data Versioning:** [DVC (Data Version Control)](https://dvc.org/)
-- **Experiment Tracking:** [MLflow](https://mlflow.org/)
-- **API:** FastAPI + Uvicorn
-- **Monitoring:** [Prometheus](https://prometheus.io/) & [Grafana](https://grafana.com/)
-- **Orchestration:** Airflow 3.x
-- **Visualization:** Matplotlib, Seaborn
+- **Langage** : Python
+- **Gestion de paquets** : `uv`
+- **ML** : Scikit-learn, Pandas, NumPy
+- **MLOps** : DVC, MLflow, Airflow
+- **Serving** : FastAPI, Streamlit, Uvicorn
+- **DevOps/Monitoring** : Docker, Prometheus, Grafana
 
-## 📊 Monitoring (Observability)
-The project includes a complete monitoring stack to track API performance and model health.
-
-### 1. Start Monitoring Services
-Ensure the API is running, then Prometheus and Grafana will automatically start collecting data:
-```bash
-docker compose up -d
-```
-
-### 2. Available Dashboards
-- **Prometheus UI:** [http://localhost:9090](http://localhost:9090) (Check targets and raw metrics)
-- **Grafana UI:** [http://localhost:3000](http://localhost:3000) (User: `admin` / Pass: `admin`)
-
-### 3. Key Metrics Tracked
-- **Volume:** Requests per second (Total vs `/predict`)
-- **Latency:** Inference time (P95 quantile)
-- **Reliability:** Success rate (HTTP 200 vs 500)
-- **Resource Usage:** RAM (Resident Memory) and CPU consumption.
-
-### 4. Customizing Grafana
-You can create custom panels using PromQL. For example, to track RAM usage:
-`process_resident_memory_bytes / 1024 / 1024` (in MiB).
-
-## 🚀 API Deployment (Inference)
-```text
-mlops-superstore/
-├── data/               # Data directory (managed by DVC)
-│   ├── raw/            # Raw Superstore.csv
-│   └── processed/      # Features generated by preprocessing.py
-├── notebooks/          # Exploratory Data Analysis notebooks
-├── src/
-│   ├── data/           # Preprocessing scripts
-│   ├── models/         # Training and model registration scripts
-│   └── api/            # API implementation (FastAPI/Flask)
-├── dags/               # Airflow DAGs (Work in Progress)
-├── monitoring/         # Model monitoring scripts
-├── .github/workflows/  # CI/CD pipelines
-├── mlartifacts/        # MLflow local storage
-└── mlflow.db           # MLflow tracking database
-```
-
-## 🚀 Getting Started
-
-### 1. Prerequisites
-Ensure you have Python installed. It's recommended to use a virtual environment.
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### 2. Data Versioning (DVC)
-This project uses DVC to manage large data files.
-```bash
-# To pull the data (requires DVC remote configuration)
-dvc pull
-```
-
-### 3. Running the Pipeline
-This repository now includes dedicated pipeline scripts under `scripts/` and a root `Makefile` for convenience.
-
-#### A. Preprocessing
-Prepare the data for training:
-```bash
-bash scripts/preprocess.sh
-# or
-make preprocess
-```
-
-#### B. Model Training & Tracking
-Train multiple models and log results to MLflow:
-```bash
-# Start MLflow server in a separate terminal
-mlflow server --host 127.0.0.1 --port 5000
-
-# Run training script
-bash scripts/train.sh
-# or
-make train
-```
-
-#### C. Model Registration
-Promote the best-performing model to the **Production** stage:
-```bash
-bash scripts/register.sh
-# or
-make register
-```
-
-#### D. Full Pipeline
-Run the entire DVC pipeline end-to-end:
-```bash
-bash scripts/run_pipeline.sh
-# or
-make pipeline
-```
-
-## ⛅ Airflow Orchestration
-This project includes an Airflow DAG directory under `dags/`.
-Airflow 3.x is required for the current Python 3.13 environment.
-
-### Start Airflow in standalone mode
-```bash
-export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/dags
-airflow standalone
-```
-
-- `airflow standalone` initializes the database, launches the webserver, and creates a local admin user.
-- The admin credentials are shown in the terminal output when Airflow starts.
-- There is no default `admin/admin` account for this setup.
-
-### If you need the DAG folder permanently
-Add this line to your shell profile:
-```bash
-echo "export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/dags" >> ~/.bashrc
-source ~/.bashrc
-```
-
-### Login notes
-If `admin/admin` does not work, use the credentials printed by `airflow standalone`.
-If you lost them, stop Airflow and restart `airflow standalone` to recreate the local admin user and display the login info again.
-
-## 🚀 API Deployment (Inference)
-
-L'API est conçue pour être autonome, robuste et facile à mettre à jour sans reconstruire l'image Docker.
-
-### 1. Configuration du Conteneur
-Le déploiement utilise **Docker Compose** avec deux optimisations majeures :
-- **Volume Mounting** : Le dossier `mlartifacts/` est monté en lecture seule dans le conteneur. Cela permet de changer de modèle sans reconstruire l'image.
-- **Lazy Loading** : Le modèle est chargé en mémoire uniquement lors de la première requête de prédiction, évitant ainsi les crashs au démarrage si le fichier est manquant.
-
-### 2. Lancement rapide
-1. **Identifier le modèle** : Trouvez le chemin de votre fichier `model.pkl` dans `mlartifacts/`.
-2. **Mettre à jour la configuration** : Modifiez la variable `MODEL_PATH` dans `docker-compose.yml` pour pointer vers votre modèle.
-3. **Démarrer l'API** :
-   ```bash
-   docker compose up -d --build
-   ```
-
-### 3. Endpoints disponibles
-- **Accueil** : `GET http://localhost:8000/` (Affiche les infos du modèle configuré)
-- **Santé** : `GET http://localhost:8000/health` (Vérifie si le modèle est chargé en mémoire)
-- **Prédiction** : `POST http://localhost:8000/predict`
-  ```bash
-  curl -X POST http://localhost:8000/predict \
-    -H "Content-Type: application/json" \
-    -d '{
-      "Sales": 800, "Quantity": 2, "Discount": 0.0,
-      "Ship_Mode": "Standard Class", "Segment": "Corporate",
-      "Region": "West", "Category": "Technology",
-      "Sub_Category": "Phones", "order_month": 11,
-      "order_quarter": 4, "order_dayofweek": 1,
-      "shipping_delay": 4, "unit_price": 400.0
-    }'
-  ```
-
-### 4. Mise à jour du modèle
-Pour passer à une nouvelle version du modèle :
-1. Modifiez `MODEL_PATH` dans `docker-compose.yml`.
-2. Redémarrez le conteneur : `docker compose restart`.
-
-## 📊 Model Performance
-The current best model is **Gradient Boosting**, achieving:
-- **F1-Score:** 0.9723
-- **ROC-AUC:** 0.9911
-- **Cross-Val F1:** 0.9716
-
-## 📈 Experiment Tracking
-MLflow is used to compare different models. You can view the dashboard by running:
-```bash
-python start_mlflow_tunnel.py
-```
-This script also sets up an `ngrok` tunnel if you need to access the MLflow UI from an external environment like Google Colab.
+---
 
 ## 📝 License
-This project is for educational purposes as part of the MLOps curriculum.
+Projet réalisé dans le cadre du cursus MLOps. Pour usage éducatif uniquement.

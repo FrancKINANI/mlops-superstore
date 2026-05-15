@@ -4,10 +4,11 @@
 .PHONY: help install env preprocess validate train test api deploy clean
 
 # Variables
-PYTHON := python3
-VENV := .venv
+VENV := venv
+PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
+UV := $(shell command -v uv 2> /dev/null)
 
 # ─────────────────────────────────────────
 # AIDE
@@ -17,8 +18,9 @@ help:
 	@echo "🚀 MLOps Superstore — Commandes disponibles"
 	@echo ""
 	@echo "Setup:"
-	@echo "  make install         Installe les dépendances"
+	@echo "  make install         Installe les dépendances (utilise uv si dispo)"
 	@echo "  make env             Configure les variables d'env"
+	@echo "  make compile         Recompile les requirements via uv"
 	@echo ""
 	@echo "Pipeline:"
 	@echo "  make preprocess      Préprocess les données"
@@ -26,8 +28,9 @@ help:
 	@echo "  make train           Entraîne les modèles"
 	@echo "  make test            Lance les tests"
 	@echo ""
-	@echo "Déploiement:"
+	@echo "Déploiement & UI:"
 	@echo "  make api             Lance l'API"
+	@echo "  make ui              Lance l'interface Streamlit"
 	@echo "  make deploy          Déploie avec Docker"
 	@echo ""
 	@echo "Utilitaires:"
@@ -40,10 +43,23 @@ help:
 
 install:
 	@echo "📦 Installation des dépendances..."
-	@python -m venv $(VENV)
-	@$(PIP) install --upgrade pip setuptools wheel
-	@$(PIP) install -r requirements.txt
+	@if [ ! -d $(VENV) ]; then python -m venv $(VENV); fi
+	@if [ -n "$(UV)" ]; then \
+		$(UV) pip install --python $(VENV)/bin/python -r requirements.txt; \
+	else \
+		$(PIP) install --upgrade pip setuptools wheel; \
+		$(PIP) install -r requirements.txt; \
+	fi
 	@echo "✅ Installation complète!"
+
+compile:
+	@if [ -n "$(UV)" ]; then \
+		$(UV) pip compile requirements.in -o requirements.txt; \
+		$(UV) pip compile requirements-api.in -o requirements-api.txt; \
+		echo "✅ Requirements compilés!"; \
+	else \
+		echo "❌ uv n'est pas installé. Installez-le avec 'pip install uv'"; \
+	fi
 
 env:
 	@echo "⚙️  Configuration de l'environnement..."
@@ -108,6 +124,10 @@ api:
 	@echo "🚀 Démarrage de l'API (http://localhost:8000)..."
 	@echo "Documentation: http://localhost:8000/docs"
 	@$(PYTHON) -m src.api.main
+
+ui:
+	@echo "🎨 Démarrage de l'interface Streamlit..."
+	@$(VENV)/bin/streamlit run src/ui/app.py
 
 docker-build:
 	@echo "🐳 Construction de l'image Docker..."

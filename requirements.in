@@ -1,0 +1,35 @@
+# Core dependencies
+pandas
+numpy
+scikit-learn
+mlflow
+
+# Data versioning
+dvc[gdrive]
+
+# API & Serving
+fastapi
+uvicorn
+prometheus-fastapi-instrumentator
+
+# Orchestration
+apache-airflow>=3.0.0
+
+# Monitoring & Validation
+evidently
+great_expectations
+
+# Visualization & EDA
+seaborn
+matplotlib
+notebook
+
+# UI
+streamlit
+
+# Testing
+pytest
+
+# Utils
+python-dotenv
+pyngrok

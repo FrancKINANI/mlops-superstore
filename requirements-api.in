@@ -1,0 +1,8 @@
+# API specific dependencies
+fastapi
+uvicorn
+mlflow
+pandas
+scikit-learn
+prometheus-fastapi-instrumentator
+pydantic
