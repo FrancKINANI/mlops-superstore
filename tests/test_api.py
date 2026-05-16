@@ -10,8 +10,7 @@ import sys
 # Ajouter le projet root au path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.api.main import app, get_model
-from src.config import config
+from src.api.main import app
 
 
 @pytest.fixture

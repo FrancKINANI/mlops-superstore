@@ -10,16 +10,16 @@ Fournit des endpoints pour:
 Le modèle contient le preprocessor sklearn complet.
 """
 
-from typing import Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, Depends
+import pickle
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import pandas as pd
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field, validator
-import pickle
-import pandas as pd
-from pathlib import Path
-from datetime import datetime, timedelta
-import logging
 
 from src.config import config
 from src.logging_utils import get_logger, log_execution
@@ -30,21 +30,22 @@ logger = get_logger(__name__)
 # CACHE MODEL
 # ─────────────────────────────────────────
 
+
 class ModelCache:
     """Cache du modèle avec TTL."""
-    
+
     def __init__(self, ttl_seconds: int = 3600):
         self.model = None
         self.preprocessor = None
         self.loaded_at = None
         self.ttl_seconds = ttl_seconds
-    
+
     def is_expired(self) -> bool:
         """Vérifie si le cache a expiré."""
         if self.loaded_at is None:
             return True
         return (datetime.now() - self.loaded_at).total_seconds() > self.ttl_seconds
-    
+
     def clear(self):
         """Vide le cache."""
         self.model = None
@@ -59,9 +60,10 @@ _model_cache = ModelCache(ttl_seconds=config.api.cache_ttl)
 # SCHÉMAS PYDANTIC
 # ─────────────────────────────────────────
 
+
 class TransactionInput(BaseModel):
     """Schéma de requête pour les prédictions."""
-    
+
     Sales: float = Field(..., gt=0, description="Chiffre de vente ($)")
     Quantity: int = Field(..., gt=0, description="Quantité commandée")
     Discount: float = Field(..., ge=0, le=1, description="Taux de remise [0-1]")
@@ -72,19 +74,22 @@ class TransactionInput(BaseModel):
     Sub_Category: str = Field(..., min_length=1, description="Sous-catégorie produit")
     order_month: int = Field(..., ge=1, le=12, description="Mois de la commande [1-12]")
     order_quarter: int = Field(..., ge=1, le=4, description="Trimestre [1-4]")
-    order_dayofweek: int = Field(..., ge=0, le=6, description="Jour de la semaine [0-6]")
+    order_dayofweek: int = Field(
+        ..., ge=0, le=6, description="Jour de la semaine [0-6]"
+    )
     shipping_delay: int = Field(..., ge=0, description="Délai de livraison (jours)")
     unit_price: float = Field(..., gt=0, description="Prix unitaire ($)")
-    
-    @validator('Discount')
+
+    @validator("Discount")
     def validate_discount(cls, v):
         """Valide le discount."""
         if not (0 <= v <= 1):
-            raise ValueError('Discount doit être entre 0 et 1')
+            raise ValueError("Discount doit être entre 0 et 1")
         return v
-    
+
     class Config:
         """Configuration Pydantic."""
+
         json_schema_extra = {
             "example": {
                 "Sales": 150.0,
@@ -99,26 +104,32 @@ class TransactionInput(BaseModel):
                 "order_quarter": 2,
                 "order_dayofweek": 2,
                 "shipping_delay": 4,
-                "unit_price": 75.0
+                "unit_price": 75.0,
             }
         }
 
 
 class PredictionOutput(BaseModel):
     """Schéma de réponse pour les prédictions."""
-    
+
     prediction: int = Field(..., description="Classe prédite (0 ou 1)")
-    probability: float = Field(..., ge=0, le=1, description="Probabilité de la classe prédite")
+    probability: float = Field(
+        ..., ge=0, le=1, description="Probabilité de la classe prédite"
+    )
     label: str = Field(..., description="Label lisible ('Rentable' ou 'Non rentable')")
     confidence: float = Field(..., ge=0, le=1, description="Confiance [0-1]")
     model_name: str = Field(..., description="Nom du modèle")
-    model_stage: str = Field(..., description="Stage du modèle (Production, Staging, etc)")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Timestamp de la prédiction")
+    model_stage: str = Field(
+        ..., description="Stage du modèle (Production, Staging, etc)"
+    )
+    timestamp: datetime = Field(
+        default_factory=datetime.utcnow, description="Timestamp de la prédiction"
+    )
 
 
 class HealthStatus(BaseModel):
     """Schéma de réponse pour le health check."""
-    
+
     status: str = Field(..., description="État du service")
     model_loaded: bool = Field(..., description="Modèle chargé en mémoire")
     preprocessor_loaded: bool = Field(..., description="Preprocessor chargé")
@@ -128,7 +139,7 @@ class HealthStatus(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Schéma d'erreur standardisé."""
-    
+
     error: str
     detail: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -138,42 +149,46 @@ class ErrorResponse(BaseModel):
 # CHARGEMENT DU MODÈLE
 # ─────────────────────────────────────────
 
+
 def load_model_and_preprocessor() -> tuple:
     """
     Charge le modèle et preprocessor depuis les fichiers.
-    
+
     Returns:
         Tuple[model, preprocessor]
-    
+
     Raises:
         RuntimeError: Si les fichiers ne peuvent pas être chargés
     """
     model_path = Path(config.api.model_path)
-    preprocessor_path = Path(config.api.preprocessor_path or config.model.preprocessor_save_path / "preprocessor.pkl")
-    
+    preprocessor_path = Path(
+        config.api.preprocessor_path
+        or config.model.preprocessor_save_path / "preprocessor.pkl"
+    )
+
     logger.info(f"Tentative de chargement du modèle depuis : {model_path}")
-    
+
     if not model_path.exists():
         raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
-    
+
     try:
-        with open(model_path, 'rb') as f:
+        with open(model_path, "rb") as f:
             model = pickle.load(f)
         logger.info("✅ Modèle chargé avec succès")
     except Exception as e:
         logger.error(f"❌ Erreur lors du chargement du modèle : {str(e)}")
         raise RuntimeError(f"Impossible de charger le modèle : {str(e)}")
-    
+
     # Charger preprocessor si disponible
     preprocessor = None
     if preprocessor_path.exists():
         try:
-            with open(preprocessor_path, 'rb') as f:
+            with open(preprocessor_path, "rb") as f:
                 preprocessor = pickle.load(f)
             logger.info("✅ Preprocessor chargé avec succès")
         except Exception as e:
             logger.warning(f"Impossible de charger le preprocessor: {e}")
-    
+
     return model, preprocessor
 
 
@@ -181,7 +196,7 @@ def load_model_and_preprocessor() -> tuple:
 def get_model() -> tuple:
     """
     Récupère le modèle du cache ou le charge si nécessaire.
-    
+
     Returns:
         Tuple[model, preprocessor]: Modèle et preprocessor
     """
@@ -189,17 +204,17 @@ def get_model() -> tuple:
     if config.api.cache_model and not _model_cache.is_expired():
         logger.debug("Utilisation du modèle en cache")
         return _model_cache.model, _model_cache.preprocessor
-    
+
     # Charger depuis le disque
     model, preprocessor = load_model_and_preprocessor()
-    
+
     # Mise en cache
     if config.api.cache_model:
         _model_cache.model = model
         _model_cache.preprocessor = preprocessor
         _model_cache.loaded_at = datetime.now()
         logger.debug("Modèle mis en cache")
-    
+
     return model, preprocessor
 
 
@@ -212,7 +227,7 @@ app = FastAPI(
     description="Prédiction de rentabilité des transactions",
     version="3.0.0",
     docs_url="/docs",
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
 )
 
 # Instrument Prometheus
@@ -224,11 +239,12 @@ if config.api.enable_monitoring:
 # ENDPOINTS
 # ─────────────────────────────────────────
 
+
 @app.get("/", response_model=Dict[str, str])
 def root() -> Dict[str, str]:
     """
     Endpoint racine.
-    
+
     Returns:
         Infos sur l'API et le modèle
     """
@@ -237,7 +253,7 @@ def root() -> Dict[str, str]:
         "service": "Superstore Profitability Prediction API",
         "version": "3.0.0",
         "model": config.api.model_name,
-        "stage": config.api.model_stage
+        "stage": config.api.model_stage,
     }
 
 
@@ -245,19 +261,19 @@ def root() -> Dict[str, str]:
 def health() -> HealthStatus:
     """
     Health check endpoint.
-    
+
     Returns:
         État du service et du modèle
     """
     try:
         model, preprocessor = get_model()
         cache_status = "valid" if not _model_cache.is_expired() else "expired"
-        
+
         return HealthStatus(
             status="healthy",
             model_loaded=model is not None,
             preprocessor_loaded=preprocessor is not None,
-            cache_status=cache_status
+            cache_status=cache_status,
         )
     except Exception as e:
         logger.error(f"Health check échoué: {e}")
@@ -265,7 +281,7 @@ def health() -> HealthStatus:
             status="unhealthy",
             model_loaded=False,
             preprocessor_loaded=False,
-            cache_status="error"
+            cache_status="error",
         )
 
 
@@ -273,42 +289,46 @@ def health() -> HealthStatus:
 def predict(data: TransactionInput) -> PredictionOutput:
     """
     Prédit si une transaction sera rentable.
-    
+
     Args:
         data: Données de la transaction
-    
+
     Returns:
         Prédiction avec probabilité et confiance
-    
+
     Raises:
         HTTPException: Erreur lors de la prédiction
     """
     try:
         model, preprocessor = get_model()
-        
+
         # Construire le DataFrame
-        input_df = pd.DataFrame([{
-            "Sales": data.Sales,
-            "Quantity": data.Quantity,
-            "Discount": data.Discount,
-            "Ship Mode": data.Ship_Mode,  # Espace important pour le nom original
-            "Segment": data.Segment,
-            "Region": data.Region,
-            "Category": data.Category,
-            "Sub-Category": data.Sub_Category,
-            "order_month": data.order_month,
-            "order_quarter": data.order_quarter,
-            "order_dayofweek": data.order_dayofweek,
-            "shipping_delay": data.shipping_delay,
-            "unit_price": data.unit_price,
-        }])
+        input_df = pd.DataFrame(
+            [
+                {
+                    "Sales": data.Sales,
+                    "Quantity": data.Quantity,
+                    "Discount": data.Discount,
+                    "Ship Mode": data.Ship_Mode,  # Espace important pour le nom original
+                    "Segment": data.Segment,
+                    "Region": data.Region,
+                    "Category": data.Category,
+                    "Sub-Category": data.Sub_Category,
+                    "order_month": data.order_month,
+                    "order_quarter": data.order_quarter,
+                    "order_dayofweek": data.order_dayofweek,
+                    "shipping_delay": data.shipping_delay,
+                    "unit_price": data.unit_price,
+                }
+            ]
+        )
 
         # Prédiction
         prediction = int(model.predict(input_df)[0])
         probabilities = model.predict_proba(input_df)[0]
         probability = float(probabilities[prediction])
         confidence = float(max(probabilities))
-        
+
         label = "Rentable 💰" if prediction == 1 else "Non rentable ❌"
 
         # Log prédiction si activé
@@ -321,14 +341,13 @@ def predict(data: TransactionInput) -> PredictionOutput:
             label=label,
             confidence=round(confidence, 4),
             model_name=config.api.model_name,
-            model_stage=config.api.model_stage
+            model_stage=config.api.model_stage,
         )
 
     except Exception as e:
         logger.error(f"❌ Erreur lors de la prédiction : {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Erreur lors de la prédiction: {str(e)}"
+            status_code=500, detail=f"Erreur lors de la prédiction: {str(e)}"
         )
 
 
@@ -336,19 +355,21 @@ def predict(data: TransactionInput) -> PredictionOutput:
 def batch_predict(transactions: list[TransactionInput]) -> Dict[str, Any]:
     """
     Prédiction par batch (plusieurs transactions).
-    
+
     Args:
         transactions: Liste de transactions
-    
+
     Returns:
         Résultats pour chaque transaction
     """
     if not transactions:
         raise HTTPException(status_code=400, detail="Liste vide")
-    
+
     if len(transactions) > 1000:
-        raise HTTPException(status_code=400, detail="Maximum 1000 transactions par batch")
-    
+        raise HTTPException(
+            status_code=400, detail="Maximum 1000 transactions par batch"
+        )
+
     results = []
     for i, transaction in enumerate(transactions):
         try:
@@ -356,12 +377,12 @@ def batch_predict(transactions: list[TransactionInput]) -> Dict[str, Any]:
             results.append({"index": i, "result": result})
         except Exception as e:
             results.append({"index": i, "error": str(e)})
-    
+
     return {
         "total": len(transactions),
         "successful": sum(1 for r in results if "result" in r),
         "failed": sum(1 for r in results if "error" in r),
-        "predictions": results
+        "predictions": results,
     }
 
 
@@ -369,13 +390,13 @@ def batch_predict(transactions: list[TransactionInput]) -> Dict[str, Any]:
 def model_info() -> Dict[str, Any]:
     """
     Informations sur le modèle actuellement chargé.
-    
+
     Returns:
         Détails du modèle
     """
     try:
         model, preprocessor = get_model()
-        
+
         return {
             "name": config.api.model_name,
             "stage": config.api.model_stage,
@@ -384,7 +405,7 @@ def model_info() -> Dict[str, Any]:
             "model_type": str(type(model).__name__),
             "cache_enabled": config.api.cache_model,
             "cache_ttl_seconds": config.api.cache_ttl,
-            "monitoring_enabled": config.api.enable_monitoring
+            "monitoring_enabled": config.api.enable_monitoring,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -395,16 +416,14 @@ async def http_exception_handler(request, exc):
     """Handler personnalisé pour les HTTPException."""
     return JSONResponse(
         status_code=exc.status_code,
-        content=ErrorResponse(
-            error=str(exc.status_code),
-            detail=exc.detail
-        ).dict()
+        content=ErrorResponse(error=str(exc.status_code), detail=exc.detail).dict(),
     )
 
 
 # ─────────────────────────────────────────
 # STARTUP/SHUTDOWN
 # ─────────────────────────────────────────
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -426,10 +445,11 @@ async def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         app,
         host=config.api.host,
         port=config.api.port,
         reload=config.api.reload,
-        workers=config.api.workers
+        workers=config.api.workers,
     )

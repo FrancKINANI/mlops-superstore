@@ -22,7 +22,7 @@ if auth_token:
 # Ouvre le tunnel ngrok
 try:
     tunnel = ngrok.connect(5000)
-    print(f"\n MLflow Tracking URI pour Colab :")
+    print("\n MLflow Tracking URI pour Colab :")
     print(f" {tunnel.public_url}")
 except PyngrokNgrokError as err:
     print("\nErreur ngrok : impossible d'ouvrir le tunnel ngrok.")
@@ -33,5 +33,5 @@ except PyngrokNgrokError as err:
     print("3) Configure l'authtoken dans l'environnement : export NGROK_AUTHTOKEN=...\n")
     print("Ou exécute 'ngrok authtoken <token>' si ngrok est installé localement.")
 
-print(f"\n MLflow UI local : http://localhost:5000")
+print("\n MLflow UI local : http://localhost:5000")
 print("\n Laisse ce terminal ouvert pendant ta session Colab.")

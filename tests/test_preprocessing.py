@@ -5,7 +5,6 @@ Couvre : Preprocessing, Feature Engineering, Détection de bugs ML
 """
 
 import pytest
-import pandas as pd
 import numpy as np
 import sys
 import os
@@ -13,8 +12,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.data.preprocessing import (
     load_data, create_target, engineer_features,
-    select_features, build_preprocessor,
-    COLS_TO_DROP, CAT_FEATURES, NUM_FEATURES
+    select_features, build_preprocessor
 )
 
 # ─────────────────────────────────────────

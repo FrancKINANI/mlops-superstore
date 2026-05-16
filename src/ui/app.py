@@ -1,20 +1,17 @@
-import streamlit as st
-import requests
-import pandas as pd
-import json
+import os
 from datetime import datetime
 
-import os
+import requests
+import streamlit as st
 
 # Configuration de la page
 st.set_page_config(
-    page_title="Superstore Profitability Predictor",
-    page_icon="💰",
-    layout="wide"
+    page_title="Superstore Profitability Predictor", page_icon="💰", layout="wide"
 )
 
 # Configuration de l'API - Utilise localhost par défaut, mais permet d'être surchargé par ENV (pour Docker)
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+
 
 def check_api_health():
     try:
@@ -22,8 +19,9 @@ def check_api_health():
         if response.status_code == 200:
             return response.json()
         return None
-    except:
+    except Exception:
         return None
+
 
 # Titre de l'application
 st.title("💰 Superstore Profitability Predictor")
@@ -55,30 +53,57 @@ st.header("📝 Saisie de la Transaction")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    sales = st.number_input("Chiffre de vente ($)", min_value=0.1, value=150.0, step=10.0)
+    sales = st.number_input(
+        "Chiffre de vente ($)", min_value=0.1, value=150.0, step=10.0
+    )
     quantity = st.number_input("Quantité", min_value=1, value=2, step=1)
-    discount = st.slider("Remise (Discount)", min_value=0.0, max_value=0.8, value=0.1, step=0.05)
-    unit_price = st.number_input("Prix unitaire ($)", min_value=0.1, value=sales/quantity if quantity > 0 else 0.0)
+    discount = st.slider(
+        "Remise (Discount)", min_value=0.0, max_value=0.8, value=0.1, step=0.05
+    )
+    unit_price = st.number_input(
+        "Prix unitaire ($)",
+        min_value=0.1,
+        value=sales / quantity if quantity > 0 else 0.0,
+    )
 
 with col2:
-    ship_mode = st.selectbox("Mode d'expédition", 
-                           ['Standard Class', 'Second Class', 'First Class', 'Same Day'])
-    segment = st.selectbox("Segment client", 
-                         ['Consumer', 'Corporate', 'Home Office'])
-    region = st.selectbox("Région", 
-                        ['West', 'East', 'Central', 'South'])
-    category = st.selectbox("Catégorie", 
-                          ['Office Supplies', 'Furniture', 'Technology'])
+    ship_mode = st.selectbox(
+        "Mode d'expédition",
+        ["Standard Class", "Second Class", "First Class", "Same Day"],
+    )
+    segment = st.selectbox("Segment client", ["Consumer", "Corporate", "Home Office"])
+    region = st.selectbox("Région", ["West", "East", "Central", "South"])
+    category = st.selectbox("Catégorie", ["Office Supplies", "Furniture", "Technology"])
 
 with col3:
-    sub_category = st.selectbox("Sous-catégorie", 
-                              ['Paper', 'Binders', 'Art', 'Phones', 'Storage', 'Appliances', 
-                               'Accessories', 'Chairs', 'Furnishings', 'Labels', 'Envelopes', 
-                               'Fasteners', 'Supplies', 'Bookcases', 'Tables', 'Machines', 'Copiers'])
-    
+    sub_category = st.selectbox(
+        "Sous-catégorie",
+        [
+            "Paper",
+            "Binders",
+            "Art",
+            "Phones",
+            "Storage",
+            "Appliances",
+            "Accessories",
+            "Chairs",
+            "Furnishings",
+            "Labels",
+            "Envelopes",
+            "Fasteners",
+            "Supplies",
+            "Bookcases",
+            "Tables",
+            "Machines",
+            "Copiers",
+        ],
+    )
+
     # Dates et délais
     order_date = st.date_input("Date de commande", datetime.now())
-    shipping_delay = st.number_input("Délai de livraison (jours)", min_value=0, value=4, step=1)
+    shipping_delay = st.number_input(
+        "Délai de livraison (jours)", min_value=0, value=4, step=1
+    )
 
 # Calcul des features temporelles
 order_month = order_date.month
@@ -99,7 +124,7 @@ payload = {
     "order_quarter": order_quarter,
     "order_dayofweek": order_dayofweek,
     "shipping_delay": shipping_delay,
-    "unit_price": unit_price
+    "unit_price": unit_price,
 }
 
 st.divider()
@@ -109,32 +134,35 @@ if st.button("🚀 Prédire la rentabilité", use_container_width=True):
     with st.spinner("Analyse en cours..."):
         try:
             response = requests.post(f"{API_URL}/predict", json=payload)
-            
+
             if response.status_code == 200:
                 result = response.json()
-                
+
                 # Affichage du résultat
                 st.header("📊 Résultat de l'Analyse")
-                
+
                 res_col1, res_col2 = st.columns(2)
-                
+
                 with res_col1:
-                    if result['prediction'] == 1:
+                    if result["prediction"] == 1:
                         st.success(f"### {result['label']}")
                     else:
                         st.error(f"### {result['label']}")
-                    
+
                     st.metric("Confiance du modèle", f"{result['confidence']*100:.2f}%")
-                
+
                 with res_col2:
                     st.write("**Détails techniques :**")
                     st.write(f"- Modèle : `{result['model_name']}`")
                     st.write(f"- Stage : `{result['model_stage']}`")
                     st.write(f"- Probabilité : `{result['probability']}`")
-                
+
                 # Visualisation de la probabilité
-                st.progress(result['probability'], text=f"Probabilité de la classe : {result['probability']:.4f}")
-                
+                st.progress(
+                    result["probability"],
+                    text=f"Probabilité de la classe : {result['probability']:.4f}",
+                )
+
             else:
                 st.error(f"Erreur API ({response.status_code})")
                 st.json(response.json())

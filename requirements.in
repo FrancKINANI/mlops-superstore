@@ -33,3 +33,5 @@ pytest
 # Utils
 python-dotenv
 pyngrok
+ruff
+black
