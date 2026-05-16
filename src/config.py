@@ -154,7 +154,7 @@ class AirflowConfig:
     project_root: Path = Path(
         os.getenv(
             "PROJECT_ROOT",
-            "/home/franck/Documents/01_Cours/Data/IA/Projets/efm/ML/mlops-superstore",
+            Path(__file__).resolve().parent.parent,
         )
     )
     dags_folder: Path = None
