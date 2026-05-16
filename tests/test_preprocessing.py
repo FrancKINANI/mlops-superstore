@@ -44,8 +44,8 @@ class TestLoading:
 
     def test_expected_columns_present(self, raw_df):
         """Les colonnes critiques doivent être présentes."""
-        required = ['Sales', 'Profit', 'Discount', 'Category', 'Region', 'Segment']
-        missing  = [c for c in required if c not in raw_df.columns]
+        required = ["Sales", "Profit", "Discount", "Category", "Region", "Segment"]
+        missing = [c for c in required if c not in raw_df.columns]
         assert len(missing) == 0, f"Colonnes manquantes : {missing}"
 
     def test_no_fully_null_columns(self, raw_df):
@@ -84,9 +84,10 @@ class TestTargetCreation:
         is_profitable=1 doit correspondre exactement à Profit > 0.
         Vérifie la cohérence entre la cible et sa source.
         """
-        expected = (processed_df['Profit'] > 0).astype(int)
-        assert (processed_df['is_profitable'] == expected).all(), \
+        expected = (processed_df["Profit"] > 0).astype(int)
+        assert (processed_df["is_profitable"] == expected).all(), (
             "Incohérence entre is_profitable et Profit"
+        )
 
 
 # ─────────────────────────────────────────
@@ -130,16 +131,18 @@ class TestMLBugsDetection:
         revient à donner la réponse au modèle avant qu'il prédise.
         """
         X, y = select_features(processed_df)
-        assert 'Profit' not in X.columns, \
+        assert "Profit" not in X.columns, (
             "DATA LEAKAGE DÉTECTÉ : Profit présent dans les features"
+        )
 
     def test_target_not_in_features(self, processed_df):
         """
         BUG ML : La variable cible ne doit pas être une feature.
         """
         X, y = select_features(processed_df)
-        assert 'is_profitable' not in X.columns, \
+        assert "is_profitable" not in X.columns, (
             "BUG : is_profitable présent dans les features"
+        )
 
     def test_identifiers_removed(self, processed_df):
         """
@@ -147,10 +150,9 @@ class TestMLBugsDetection:
         ne doivent pas être des features — ils ne généralisent pas.
         """
         X, y = select_features(processed_df)
-        leaking_ids = ['Order ID', 'Customer ID', 'Product ID', 'Row ID']
+        leaking_ids = ["Order ID", "Customer ID", "Product ID", "Row ID"]
         found = [c for c in leaking_ids if c in X.columns]
-        assert len(found) == 0, \
-            f"Identifiants présents dans les features : {found}"
+        assert len(found) == 0, f"Identifiants présents dans les features : {found}"
 
     def test_stratified_split_preserves_distribution(self, processed_df):
         """

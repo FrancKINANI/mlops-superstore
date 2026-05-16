@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field, validator
@@ -309,7 +310,7 @@ def predict(data: TransactionInput) -> PredictionOutput:
                     "Sales": data.Sales,
                     "Quantity": data.Quantity,
                     "Discount": data.Discount,
-                    "Ship Mode": data.Ship_Mode,  # Espace important pour le nom original
+                    "Ship Mode": data.Ship_Mode,
                     "Segment": data.Segment,
                     "Region": data.Region,
                     "Category": data.Category,
@@ -378,12 +379,14 @@ def batch_predict(transactions: list[TransactionInput]) -> Dict[str, Any]:
         except Exception as e:
             results.append({"index": i, "error": str(e)})
 
-    return {
-        "total": len(transactions),
-        "successful": sum(1 for r in results if "result" in r),
-        "failed": sum(1 for r in results if "error" in r),
-        "predictions": results,
-    }
+    return jsonable_encoder(
+        {
+            "total": len(transactions),
+            "successful": sum(1 for r in results if "result" in r),
+            "failed": sum(1 for r in results if "error" in r),
+            "predictions": results,
+        }
+    )
 
 
 @app.get("/model/info")
@@ -414,9 +417,10 @@ def model_info() -> Dict[str, Any]:
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     """Handler personnalisé pour les HTTPException."""
+    error_content = ErrorResponse(error=str(exc.status_code), detail=exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
-        content=ErrorResponse(error=str(exc.status_code), detail=exc.detail).dict(),
+        content=jsonable_encoder(error_content),
     )
 
 

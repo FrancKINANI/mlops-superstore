@@ -71,7 +71,7 @@ def load_data(path: str) -> pd.DataFrame:
         raise FileNotFoundError(f"Fichier non trouvé : {path}")
 
     df = pd.read_csv(path, encoding="latin-1")
-    df = standardize_column_names(df)
+    # df = standardize_column_names(df)  # Désactivé pour rester compatible avec le modèle
 
     logger.info(f"Dataset chargé : {df.shape[0]} lignes, {df.shape[1]} colonnes")
     logger.debug(f"Colonnes: {list(df.columns)}")
@@ -102,10 +102,10 @@ def create_target(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    if "profit" not in df.columns:
-        raise KeyError("Colonne 'profit' manquante")
+    if "Profit" not in df.columns:
+        raise KeyError("Colonne 'Profit' manquante")
 
-    df["is_profitable"] = (df["profit"] > 0).astype(int)
+    df["is_profitable"] = (df["Profit"] > 0).astype(int)
     rate = df["is_profitable"].mean() * 100
 
     logger.info(f"Variable cible créée — Taux de rentabilité : {rate:.1f}%")
@@ -140,30 +140,30 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # Vérifier les colonnes requises
-    required = ["order_date", "ship_date", "sales", "quantity"]
+    required = ["Order Date", "Ship Date", "Sales", "Quantity"]
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise KeyError(f"Colonnes manquantes : {missing}")
 
     # Conversion des dates
-    df["order_date"] = pd.to_datetime(df["order_date"], errors="coerce")
-    df["ship_date"] = pd.to_datetime(df["ship_date"], errors="coerce")
+    df["Order Date"] = pd.to_datetime(df["Order Date"], errors="coerce")
+    df["Ship Date"] = pd.to_datetime(df["Ship Date"], errors="coerce")
 
     # Vérifier s'il y a des dates invalides
-    invalid_dates = df["order_date"].isna().sum() + df["ship_date"].isna().sum()
+    invalid_dates = df["Order Date"].isna().sum() + df["Ship Date"].isna().sum()
     if invalid_dates > 0:
         logger.warning(f"{invalid_dates} dates invalides détectées")
 
     # Features temporelles
-    df["order_month"] = df["order_date"].dt.month
-    df["order_quarter"] = df["order_date"].dt.quarter
-    df["order_dayofweek"] = df["order_date"].dt.dayofweek
+    df["order_month"] = df["Order Date"].dt.month
+    df["order_quarter"] = df["Order Date"].dt.quarter
+    df["order_dayofweek"] = df["Order Date"].dt.dayofweek
 
     # Délai de livraison (jours)
-    df["shipping_delay"] = (df["ship_date"] - df["order_date"]).dt.days
+    df["shipping_delay"] = (df["Ship Date"] - df["Order Date"]).dt.days
 
     # Unit price = Sales / Quantity (avec gestion division par 0)
-    df["unit_price"] = np.where(df["quantity"] > 0, df["sales"] / df["quantity"], 0)
+    df["unit_price"] = np.where(df["Quantity"] > 0, df["Sales"] / df["Quantity"], 0)
 
     logger.info("Feature engineering terminé — nouvelles features créées")
     logger.debug(
