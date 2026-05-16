@@ -11,21 +11,59 @@ Le modèle contient le preprocessor sklearn complet.
 """
 
 import pickle
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.config import config
 from src.logging_utils import get_logger, log_execution
 
 logger = get_logger(__name__)
+
+
+# ─────────────────────────────────────────
+# LIFESPAN (STARTUP/SHUTDOWN)
+# ─────────────────────────────────────────
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Gestion du cycle de vie de l'application."""
+    # Startup
+    logger.info("🚀 Démarrage de l'API")
+    try:
+        get_model()
+        logger.info("✅ Modèle chargé au démarrage")
+    except Exception as e:
+        logger.error(f"⚠️  Erreur lors du chargement du modèle: {e}")
+
+    yield
+
+    # Shutdown
+    logger.info("🛑 Arrêt de l'API")
+    _model_cache.clear()
+
+
+# Initialisation FastAPI
+app = FastAPI(
+    title="Superstore Profitability Prediction API",
+    description="API MLOps pour prédire la rentabilité des transactions Superstore",
+    version="3.0.0",
+    lifespan=lifespan,
+)
+
+# Activer l'instrumentation Prometheus
+if config.monitoring.prometheus_enabled:
+    Instrumentator().instrument(app).expose(app)
+
 
 # ─────────────────────────────────────────
 # CACHE MODEL
@@ -45,7 +83,9 @@ class ModelCache:
         """Vérifie si le cache a expiré."""
         if self.loaded_at is None:
             return True
-        return (datetime.now() - self.loaded_at).total_seconds() > self.ttl_seconds
+        return (
+            datetime.now(timezone.utc) - self.loaded_at
+        ).total_seconds() > self.ttl_seconds
 
     def clear(self):
         """Vide le cache."""
@@ -65,33 +105,8 @@ _model_cache = ModelCache(ttl_seconds=config.api.cache_ttl)
 class TransactionInput(BaseModel):
     """Schéma de requête pour les prédictions."""
 
-    Sales: float = Field(..., gt=0, description="Chiffre de vente ($)")
-    Quantity: int = Field(..., gt=0, description="Quantité commandée")
-    Discount: float = Field(..., ge=0, le=1, description="Taux de remise [0-1]")
-    Ship_Mode: str = Field(..., min_length=1, description="Mode d'expédition")
-    Segment: str = Field(..., min_length=1, description="Segment client")
-    Region: str = Field(..., min_length=1, description="Région géographique")
-    Category: str = Field(..., min_length=1, description="Catégorie produit")
-    Sub_Category: str = Field(..., min_length=1, description="Sous-catégorie produit")
-    order_month: int = Field(..., ge=1, le=12, description="Mois de la commande [1-12]")
-    order_quarter: int = Field(..., ge=1, le=4, description="Trimestre [1-4]")
-    order_dayofweek: int = Field(
-        ..., ge=0, le=6, description="Jour de la semaine [0-6]"
-    )
-    shipping_delay: int = Field(..., ge=0, description="Délai de livraison (jours)")
-    unit_price: float = Field(..., gt=0, description="Prix unitaire ($)")
-
-    @validator("Discount")
-    def validate_discount(cls, v):
-        """Valide le discount."""
-        if not (0 <= v <= 1):
-            raise ValueError("Discount doit être entre 0 et 1")
-        return v
-
-    class Config:
-        """Configuration Pydantic."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "Sales": 150.0,
                 "Quantity": 2,
@@ -108,6 +123,31 @@ class TransactionInput(BaseModel):
                 "unit_price": 75.0,
             }
         }
+    )
+
+    Sales: float = Field(..., gt=0, description="Chiffre de vente ($)")
+    Quantity: int = Field(..., gt=0, description="Quantité commandée")
+    Discount: float = Field(..., ge=0, le=1, description="Taux de remise [0-1]")
+    Ship_Mode: str = Field(..., min_length=1, description="Mode d'expédition")
+    Segment: str = Field(..., min_length=1, description="Segment client")
+    Region: str = Field(..., min_length=1, description="Région géographique")
+    Category: str = Field(..., min_length=1, description="Catégorie produit")
+    Sub_Category: str = Field(..., min_length=1, description="Sous-catégorie produit")
+    order_month: int = Field(..., ge=1, le=12, description="Mois de la commande [1-12]")
+    order_quarter: int = Field(..., ge=1, le=4, description="Trimestre [1-4]")
+    order_dayofweek: int = Field(
+        ..., ge=0, le=6, description="Jour de la semaine [0-6]"
+    )
+    shipping_delay: int = Field(..., ge=0, description="Délai de livraison (jours)")
+    unit_price: float = Field(..., gt=0, description="Prix unitaire ($)")
+
+    @field_validator("Discount")
+    @classmethod
+    def validate_discount(cls, v):
+        """Valide le discount."""
+        if not (0 <= v <= 1):
+            raise ValueError("Discount doit être entre 0 et 1")
+        return v
 
 
 class PredictionOutput(BaseModel):
@@ -124,7 +164,8 @@ class PredictionOutput(BaseModel):
         ..., description="Stage du modèle (Production, Staging, etc)"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Timestamp de la prédiction"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp de la prédiction",
     )
 
 
@@ -135,7 +176,7 @@ class HealthStatus(BaseModel):
     model_loaded: bool = Field(..., description="Modèle chargé en mémoire")
     preprocessor_loaded: bool = Field(..., description="Preprocessor chargé")
     cache_status: Optional[str] = Field(None, description="État du cache")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ErrorResponse(BaseModel):
@@ -143,7 +184,7 @@ class ErrorResponse(BaseModel):
 
     error: str
     detail: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ─────────────────────────────────────────
@@ -151,7 +192,7 @@ class ErrorResponse(BaseModel):
 # ─────────────────────────────────────────
 
 
-def load_model_and_preprocessor() -> tuple:
+def load_model_and_preprocessor() -> Tuple[Any, Any]:
     """
     Charge le modèle et preprocessor depuis les fichiers.
 
@@ -169,16 +210,16 @@ def load_model_and_preprocessor() -> tuple:
 
     logger.info(f"Tentative de chargement du modèle depuis : {model_path}")
 
-    if not model_path.exists():
-        raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
-
     try:
+        if not model_path.exists():
+            raise FileNotFoundError(f"Modèle non trouvé: {model_path}")
+
         with open(model_path, "rb") as f:
             model = pickle.load(f)
         logger.info("✅ Modèle chargé avec succès")
     except Exception as e:
         logger.error(f"❌ Erreur lors du chargement du modèle : {str(e)}")
-        raise RuntimeError(f"Impossible de charger le modèle : {str(e)}")
+        raise RuntimeError(f"Impossible de charger le modèle : {str(e)}") from e
 
     # Charger preprocessor si disponible
     preprocessor = None
@@ -188,52 +229,27 @@ def load_model_and_preprocessor() -> tuple:
                 preprocessor = pickle.load(f)
             logger.info("✅ Preprocessor chargé avec succès")
         except Exception as e:
-            logger.warning(f"Impossible de charger le preprocessor: {e}")
+            logger.warning(f"⚠️  Impossible de charger le preprocessor: {e}")
 
     return model, preprocessor
 
 
 @log_execution
-def get_model() -> tuple:
+def get_model() -> Tuple[Any, Any]:
     """
     Récupère le modèle du cache ou le charge si nécessaire.
 
     Returns:
         Tuple[model, preprocessor]: Modèle et preprocessor
     """
-    # Vérifier le cache
-    if config.api.cache_model and not _model_cache.is_expired():
-        logger.debug("Utilisation du modèle en cache")
-        return _model_cache.model, _model_cache.preprocessor
-
-    # Charger depuis le disque
-    model, preprocessor = load_model_and_preprocessor()
-
-    # Mise en cache
-    if config.api.cache_model:
+    if _model_cache.model is None or _model_cache.is_expired():
+        logger.info("🔄 Rechargement du modèle (cache expiré ou vide)")
+        model, preprocessor = load_model_and_preprocessor()
         _model_cache.model = model
         _model_cache.preprocessor = preprocessor
-        _model_cache.loaded_at = datetime.now()
-        logger.debug("Modèle mis en cache")
+        _model_cache.loaded_at = datetime.now(timezone.utc)
 
-    return model, preprocessor
-
-
-# ─────────────────────────────────────────
-# APPLICATION FASTAPI
-# ─────────────────────────────────────────
-
-app = FastAPI(
-    title="Superstore Profitability API",
-    description="Prédiction de rentabilité des transactions",
-    version="3.0.0",
-    docs_url="/docs",
-    openapi_url="/openapi.json",
-)
-
-# Instrument Prometheus
-if config.api.enable_monitoring:
-    Instrumentator().instrument(app).expose(app)
+    return _model_cache.model, _model_cache.preprocessor
 
 
 # ─────────────────────────────────────────
@@ -349,7 +365,7 @@ def predict(data: TransactionInput) -> PredictionOutput:
         logger.error(f"❌ Erreur lors de la prédiction : {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Erreur lors de la prédiction: {str(e)}"
-        )
+        ) from e
 
 
 @app.post("/batch_predict")
@@ -411,7 +427,7 @@ def model_info() -> Dict[str, Any]:
             "monitoring_enabled": config.api.enable_monitoring,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.exception_handler(HTTPException)
@@ -422,29 +438,6 @@ async def http_exception_handler(request, exc):
         status_code=exc.status_code,
         content=jsonable_encoder(error_content),
     )
-
-
-# ─────────────────────────────────────────
-# STARTUP/SHUTDOWN
-# ─────────────────────────────────────────
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Événement de démarrage."""
-    logger.info("🚀 Démarrage de l'API")
-    try:
-        get_model()
-        logger.info("✅ Modèle chargé au démarrage")
-    except Exception as e:
-        logger.error(f"⚠️  Erreur lors du chargement du modèle: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Événement d'arrêt."""
-    logger.info("🛑 Arrêt de l'API")
-    _model_cache.clear()
 
 
 if __name__ == "__main__":
